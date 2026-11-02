@@ -1,0 +1,45 @@
+import mongoose, { Schema, Document } from 'mongoose';
+
+export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'CANDIDATE';
+export type UserStatus = 'ACTIVE' | 'INACTIVE';
+
+export interface IUser extends Document {
+  name: string;
+  email: string;
+  passwordHash: string;
+  role: UserRole;
+  status: UserStatus;
+  candidateId?: mongoose.Types.ObjectId;
+  lastLoginAt?: Date;
+  refreshToken?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const UserSchema = new Schema<IUser>(
+  {
+    name: { type: String, required: true, trim: true },
+    email: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
+    passwordHash: { type: String, required: true },
+    role: {
+      type: String,
+      enum: ['SUPER_ADMIN', 'ADMIN', 'CANDIDATE'],
+      default: 'CANDIDATE',
+      index: true,
+    },
+    status: {
+      type: String,
+      enum: ['ACTIVE', 'INACTIVE'],
+      default: 'ACTIVE',
+      index: true,
+    },
+    candidateId: { type: Schema.Types.ObjectId, ref: 'Candidate' },
+    lastLoginAt: { type: Date },
+    refreshToken: { type: String },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+export const User = mongoose.model<IUser>('User', UserSchema);
