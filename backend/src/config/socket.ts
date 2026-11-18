@@ -8,10 +8,16 @@ export const initSocket = (httpServer: HttpServer): SocketIOServer => {
   io = new SocketIOServer(httpServer, {
     cors: {
       origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        const cleanOrigin = origin.replace(/^https?:\/\//, '').replace(/\/$/, '').toLowerCase();
+        const cleanCorsEnv = (env.CORS_ORIGIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '').toLowerCase();
+
         if (
-          !origin ||
           origin === env.CORS_ORIGIN ||
+          cleanOrigin === cleanCorsEnv ||
           origin.endsWith('.vercel.app') ||
+          origin.endsWith('.netlify.app') ||
+          origin.endsWith('.railway.app') ||
           origin.includes('localhost') ||
           origin.includes('127.0.0.1')
         ) {

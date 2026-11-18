@@ -11,6 +11,9 @@ import { globalApiRateLimiter, postMutationRateLimiter } from './middlewares/rat
 export const createApp = (): Application => {
   const app = express();
 
+  // Railway/Vercel berada di belakang reverse proxy: wajib agar rate limiter membaca IP asli klien
+  app.set('trust proxy', 1);
+
   // Security Headers
   app.use(
     helmet({
@@ -22,8 +25,11 @@ export const createApp = (): Application => {
   // CORS Configuration with strict origin check
   const isAllowedOrigin = (origin?: string): boolean => {
     if (!origin) return true; // allow same-origin, curl, server-to-server, mobile
-    if (origin === env.CORS_ORIGIN) return true;
-    if (origin.endsWith('.vercel.app') || origin.endsWith('.netlify.app')) return true;
+    const cleanOrigin = origin.replace(/^https?:\/\//, '').replace(/\/$/, '').toLowerCase();
+    const cleanCorsEnv = (env.CORS_ORIGIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '').toLowerCase();
+
+    if (origin === env.CORS_ORIGIN || cleanOrigin === cleanCorsEnv) return true;
+    if (origin.endsWith('.vercel.app') || origin.endsWith('.netlify.app') || origin.endsWith('.railway.app')) return true;
     if (origin.includes('localhost') || origin.includes('127.0.0.1')) return true;
     return false;
   };
