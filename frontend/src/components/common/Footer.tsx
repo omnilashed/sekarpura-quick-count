@@ -20,8 +20,8 @@ export const Footer: React.FC = () => {
                 <p className="text-xs text-gold-400 font-semibold">Cabang Halim Perdanakusuma</p>
               </div>
             </div>
-            <p className="text-xs text-slate-400 italic">
-              "Transparansi Demokrasi, Membangun Solidaritas Pekerja."
+            <p className="text-xs text-gold-400 font-medium">
+              Tema Muscab IX: <span className="italic font-bold">"One Vision, One Heart : Strengthening Employee Solidarity"</span>
             </p>
             <p className="text-xs text-slate-400 leading-relaxed">
               Platform resmi pemantauan dan rekapitulasi real-time pemilihan Ketua Dewan Pengurus Cabang Serikat Pekerja Angkasa Pura Indonesia (SEKARPURA) Bandara Halim Perdanakusuma Masa Bakti 2026-2029.

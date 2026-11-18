@@ -1,5 +1,5 @@
 import React from 'react';
-import { Info, Calendar, ShieldCheck, CheckCircle2, Phone, Mail, MapPin } from 'lucide-react';
+import { Info, Calendar, ShieldCheck, CheckCircle2, Phone, Mail, MapPin, Sparkles, Compass, Heart } from 'lucide-react';
 
 export const ElectionInfoPage: React.FC = () => {
   const stagesSchedule = [
@@ -55,8 +55,57 @@ export const ElectionInfoPage: React.FC = () => {
           Tahapan & Ketentuan Pemilihan SEKARPURA
         </h1>
         <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">
-          Pedoman pelaksanaan Musyawarah Cabang dan Pemilihan Ketua Serikat Pekerja Angkasa Pura Indonesia Cabang Halim Perdanakusuma Masa Bakti 2026-2029.
+          Pedoman pelaksanaan Musyawarah Cabang IX dan Pemilihan Ketua Serikat Pekerja Angkasa Pura Indonesia Cabang Halim Perdanakusuma Masa Bakti 2026-2029.
         </p>
+      </div>
+
+      {/* Tema Muscab IX & Makna Filosofis */}
+      <div className="bg-gradient-to-br from-navy-950 via-navy-900 to-navy-900 text-white border border-gold-500/30 rounded-3xl p-5 xs:p-7 sm:p-10 shadow-xl space-y-6 relative overflow-hidden">
+        <div className="relative z-10 space-y-3">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gold-500/20 text-gold-400 border border-gold-500/30 text-[11px] font-extrabold uppercase tracking-wider">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>TEMA RESMI MUSCAB IX</span>
+          </div>
+          <h2 className="text-2xl xs:text-3xl sm:text-4xl font-extrabold tracking-tight text-white leading-tight">
+            "One Vision, One Heart : Strengthening Employee Solidarity"
+          </h2>
+          <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-3xl">
+            Tema Musyawarah Cabang IX ini merefleksikan tekad seluruh anggota serikat pekerja untuk bersatu dalam keselarasan arah pandang, merawat ketulusan hati antarinsan pekerja, dan memperkokoh benteng solidaritas demi martabat serta kesejahteraan bersama di Bandara Halim Perdanakusuma.
+          </p>
+        </div>
+
+        {/* 3 Makna Utama */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 relative z-10 pt-2">
+          <div className="p-4 sm:p-5 rounded-2xl bg-navy-800/80 border border-slate-700/60 space-y-2.5">
+            <div className="w-10 h-10 rounded-xl bg-electric-500/20 text-electric-400 flex items-center justify-center font-bold">
+              <Compass className="w-5 h-5" />
+            </div>
+            <h3 className="font-extrabold text-sm sm:text-base text-white">One Vision</h3>
+            <p className="text-[11px] sm:text-xs text-slate-300 leading-relaxed">
+              <strong>Satu Visi Perjuangan:</strong> Menyatukan arah langkah organisasi dalam mengawal kepastian hak normatif, jenjang karier, dan peningkatan kompetensi pekerja menghadapi tantangan industri bandara.
+            </p>
+          </div>
+
+          <div className="p-4 sm:p-5 rounded-2xl bg-navy-800/80 border border-slate-700/60 space-y-2.5">
+            <div className="w-10 h-10 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center font-bold">
+              <Heart className="w-5 h-5" />
+            </div>
+            <h3 className="font-extrabold text-sm sm:text-base text-white">One Heart</h3>
+            <p className="text-[11px] sm:text-xs text-slate-300 leading-relaxed">
+              <strong>Satu Hati & Ketulusan:</strong> Menghilangkan sekat antar unit kerja dan tingkatan jabatan, menumbuhkan empati, ketulusan rasa memiliki (*sense of belonging*), dan persaudaraan sejati antar sesama anggota.
+            </p>
+          </div>
+
+          <div className="p-4 sm:p-5 rounded-2xl bg-navy-800/80 border border-slate-700/60 space-y-2.5">
+            <div className="w-10 h-10 rounded-xl bg-gold-500/20 text-gold-400 flex items-center justify-center font-bold">
+              <ShieldCheck className="w-5 h-5" />
+            </div>
+            <h3 className="font-extrabold text-sm sm:text-base text-white">Strengthening Solidarity</h3>
+            <p className="text-[11px] sm:text-xs text-slate-300 leading-relaxed">
+              <strong>Penguatan Solidaritas:</strong> Menggalang persatuan kolektif yang berintegritas dan bermartabat, agar serikat pekerja memiliki daya tawar yang kuat serta menjadi mitra dialog sosial yang solutif.
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Schedule Timeline */}

@@ -17,6 +17,7 @@ import { CountingProgressCard } from '../../components/quickcount/CountingProgre
 import { HistoricalTrendChart } from '../../components/quickcount/HistoricalTrendChart';
 import { LiveUpdatesFeed } from '../../components/quickcount/LiveUpdatesFeed';
 import { CandidateCard } from '../../components/candidate/CandidateCard';
+import { MuscabThemeSection } from '../../components/home/MuscabThemeSection';
 
 export const HomePage: React.FC = () => {
   const { data, isLoading, fetchQuickCount, initSocket } = useQuickcountStore();
@@ -46,7 +47,10 @@ export const HomePage: React.FC = () => {
         onRefresh={() => fetchQuickCount()}
       />
 
-      {/* 2. LIVE TOP 5 CANDIDATE PODIUM */}
+      {/* 2. Official MUSCAB IX Theme & Meaning Section */}
+      <MuscabThemeSection />
+
+      {/* 3. LIVE TOP 5 CANDIDATE PODIUM */}
       <PodiumTop5 top5={data?.top5 || []} isLoading={isLoading} />
 
       {/* 3. Live Vote Statistics & Charts Grid */}

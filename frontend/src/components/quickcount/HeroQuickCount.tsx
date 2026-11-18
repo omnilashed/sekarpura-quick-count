@@ -59,11 +59,12 @@ export const HeroQuickCount: React.FC<HeroQuickCountProps> = ({ data, isLoading,
           SEKARPURA <span className="text-transparent bg-clip-text bg-gradient-to-r from-gold-400 to-amber-300">ELECTION CENTER</span>
         </h1>
         <p className="text-xs sm:text-base md:text-lg font-medium text-slate-300 mt-1.5 sm:mt-2">
-          Live QuickCount Pemilihan Ketua Serikat Pekerja Angkasa Pura Indonesia Cabang Halim Perdanakusuma
+          Musyawarah Cabang IX & Pemilihan Ketua Serikat Pekerja Angkasa Pura Indonesia Cabang Halim Perdanakusuma
         </p>
-        <p className="text-[11px] sm:text-sm text-gold-400/90 italic font-normal mt-1">
-          "Transparansi Demokrasi, Membangun Solidaritas Pekerja."
-        </p>
+        <div className="mt-3 inline-flex flex-wrap items-center gap-2 px-3.5 py-1.5 rounded-full bg-gradient-to-r from-gold-500/20 via-electric-500/20 to-gold-500/20 border border-gold-500/40 text-gold-300 text-xs sm:text-sm font-extrabold shadow-sm">
+          <span className="w-2 h-2 rounded-full bg-gold-400 animate-pulse shrink-0" />
+          <span>TEMA MUSCAB IX: "One Vision, One Heart : Strengthening Employee Solidarity"</span>
+        </div>
       </div>
 
       {/* Primary Key Metrics Grid - Adaptive 2 cols on mobile (1 col on extreme <300px), 4 cols on lg */}

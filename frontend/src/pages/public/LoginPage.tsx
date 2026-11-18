@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock, Mail, AlertCircle, ArrowRight } from 'lucide-react';
+import { Lock, Mail, AlertCircle, ArrowRight, ShieldCheck, Sparkles } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 
 export const LoginPage: React.FC = () => {
@@ -41,31 +41,30 @@ export const LoginPage: React.FC = () => {
     }
   };
 
-  // Helper buttons for fast demo testing
-  const setQuickCreds = (e: string, p: string) => {
-    setEmail(e);
-    setPassword(p);
-    setError(null);
-  };
-
   return (
     <div className="min-h-[75vh] flex items-center justify-center py-6 sm:py-10 px-2 sm:px-4">
       <div className="w-full max-w-md">
         {/* Card Header */}
-        <div className="text-center mb-6 sm:mb-8">
-          <div className="inline-flex items-center justify-center w-14 sm:w-16 h-14 sm:h-16 rounded-2xl bg-gradient-to-tr from-navy-950 to-navy-800 border border-gold-500/40 p-2 shadow-xl mb-3 sm:mb-4">
+        <div className="text-center mb-6 sm:mb-8 space-y-2">
+          <div className="inline-flex items-center justify-center w-14 sm:w-16 h-14 sm:h-16 rounded-2xl bg-gradient-to-tr from-navy-950 to-navy-800 border border-gold-500/40 p-2 shadow-xl mb-1">
             <img src="/logo.svg" alt="SEKARPURA Logo" className="w-8 sm:w-10 h-8 sm:h-10 object-contain" />
           </div>
           <h1 className="text-xl xs:text-2xl sm:text-3xl font-extrabold text-navy-900 dark:text-white">
             Masuk Portal Resmi
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
             SEKARPURA Election Center Cabang Halim Perdanakusuma
           </p>
+          <div className="pt-1">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gold-500/10 border border-gold-500/30 text-gold-600 dark:text-gold-400 text-[10px] sm:text-[11px] font-bold">
+              <Sparkles className="w-3 h-3" />
+              <span>"One Vision, One Heart : Strengthening Employee Solidarity"</span>
+            </span>
+          </div>
         </div>
 
         {/* Form Container */}
-        <div className="bg-white dark:bg-navy-900 border border-slate-200 dark:border-navy-800 rounded-3xl p-4 xs:p-6 sm:p-8 shadow-xl">
+        <div className="bg-white dark:bg-navy-900 border border-slate-200 dark:border-navy-800 rounded-3xl p-5 xs:p-6 sm:p-8 shadow-xl">
           {error && (
             <div className="mb-4 sm:mb-6 p-3 sm:p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 text-xs font-semibold flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
@@ -118,24 +117,10 @@ export const LoginPage: React.FC = () => {
             </button>
           </form>
 
-          {/* Quick Login helper */}
-          <div className="mt-6 sm:mt-8 pt-5 sm:pt-6 border-t border-slate-100 dark:border-navy-800 text-xs">
-            <p className="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2 text-center">
-              Akses Cepat Administrator:
-            </p>
-            <div className="flex justify-center">
-              <button
-                type="button"
-                onClick={() => setQuickCreds('admin@sekarpura-halim.org', 'AdminSekarpura2026!')}
-                className="w-full p-2.5 rounded-xl border border-gold-500/30 bg-gold-500/10 hover:bg-gold-500/20 text-gold-700 dark:text-gold-300 font-bold text-[11px] transition-all text-center min-h-[40px] flex items-center justify-center gap-1.5 shadow-sm"
-              >
-                <span>🔐</span>
-                <span>Isi Otomatis Akun Super Admin</span>
-              </button>
-            </div>
-            <p className="text-[9px] sm:text-[10px] text-slate-400 text-center mt-2.5">
-              Akun bakal calon ketua dapat didaftarkan melalui Admin Control Center.
-            </p>
+          {/* Secure Portal Footer */}
+          <div className="mt-6 pt-5 border-t border-slate-100 dark:border-navy-800 flex items-center justify-center gap-2 text-slate-400 text-[11px]">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+            <span>Portal Terenkripsi & Terautentikasi Panitia & Kandidat</span>
           </div>
         </div>
       </div>
