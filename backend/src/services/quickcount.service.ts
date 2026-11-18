@@ -66,8 +66,34 @@ export interface QuickCountResult {
 // In-memory previous leader cache to detect leader changes across broadcasts
 const previousLeaderMap = new Map<string, string>();
 
+// In-memory micro-cache untuk operasi pembacaan massal (High-Traffic Protection: 2.5s TTL)
+// Mencegah query beruntun ke database saat ribuan orang membuka/me-refresh beranda secara bersamaan
+const quickCountCache = new Map<string, { data: QuickCountResult; expiry: number }>();
+const CACHE_TTL_MS = 2500;
+
 export class QuickCountService {
-  static async calculateStageQuickCount(stageId: string): Promise<QuickCountResult> {
+  /**
+   * Menghapus cache saat ada data suara baru yang masuk atau dikoreksi
+   */
+  static invalidateCache(stageId?: string): void {
+    if (stageId) {
+      quickCountCache.delete(stageId);
+    } else {
+      quickCountCache.clear();
+    }
+  }
+
+  static async calculateStageQuickCount(
+    stageId: string,
+    bypassCache = false
+  ): Promise<QuickCountResult> {
+    if (!bypassCache) {
+      const cached = quickCountCache.get(stageId);
+      if (cached && Date.now() < cached.expiry) {
+        return cached.data;
+      }
+    }
+
     const stage = await ElectionStage.findById(stageId);
     if (!stage) {
       throw new Error('Tahap pemilihan tidak ditemukan.');
@@ -216,7 +242,7 @@ export class QuickCountService {
     const progressPercentage =
       totalSources > 0 ? Number(((completedSources / totalSources) * 100).toFixed(1)) : 0;
 
-    return {
+    const result: QuickCountResult = {
       electionId: stage.electionId.toString(),
       stageId: stage._id.toString(),
       stageType: stage.stageType,
@@ -242,6 +268,11 @@ export class QuickCountService {
       recentActivities,
       lastUpdatedAt: new Date(),
     };
+
+    // Simpan ke in-memory micro-cache
+    quickCountCache.set(stageId, { data: result, expiry: Date.now() + CACHE_TTL_MS });
+
+    return result;
   }
 
   static async getActiveStageQuickCount(): Promise<QuickCountResult | null> {

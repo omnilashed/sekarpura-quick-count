@@ -215,8 +215,9 @@ export class QuickCountController {
     source.activeSubmissionId = submission._id as any;
     await source.save();
 
-    // Recalculate quickcount
-    const quickcountData = await QuickCountService.calculateStageQuickCount(stage._id.toString());
+    // Invalidate cache & recalculate quickcount freshly
+    QuickCountService.invalidateCache(stage._id.toString());
+    const quickcountData = await QuickCountService.calculateStageQuickCount(stage._id.toString(), true);
 
     // Broadcast updates via Socket.IO
     broadcastQuickCountUpdate({
@@ -375,8 +376,9 @@ export class QuickCountController {
     source.status = 'VERIFIED';
     await source.save();
 
-    // Recalculate without double-counting (clean aggregate)
-    const quickcountData = await QuickCountService.calculateStageQuickCount(stage._id.toString());
+    // Invalidate cache & recalculate without double-counting (clean aggregate)
+    QuickCountService.invalidateCache(stage._id.toString());
+    const quickcountData = await QuickCountService.calculateStageQuickCount(stage._id.toString(), true);
 
     // Broadcast
     broadcastQuickCountUpdate({
@@ -614,8 +616,9 @@ export class QuickCountController {
     source.activeSubmissionId = submission._id as any;
     await source.save();
 
-    // Recalculate quickcount
-    const quickcountData = await QuickCountService.calculateStageQuickCount(stage._id.toString());
+    // Invalidate cache & recalculate quickcount freshly
+    QuickCountService.invalidateCache(stage._id.toString());
+    const quickcountData = await QuickCountService.calculateStageQuickCount(stage._id.toString(), true);
 
     // Broadcast instant WebSocket update
     broadcastQuickCountUpdate({

@@ -73,10 +73,12 @@ export const uploadRateLimiter = rateLimit({
 
 /**
  * General API read limiter for GET requests
+ * Dinaikkan ke 5.000 request per 15 menit untuk mengantisipasi akses ratusan/ribuan
+ * pengguna dari satu alamat IP publik bersama (misal: Wi-Fi kantor Bandara Halim).
  */
 export const globalApiRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 1500,
+  max: 5000,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
