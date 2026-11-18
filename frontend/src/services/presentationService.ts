@@ -26,7 +26,7 @@ export const presentationService = {
   },
 
   async getByCandidate(candidateId: string) {
-    const res = await api.get<{ success: boolean; data: Presentation }>(
+    const res = await api.get<{ success: boolean; data: Presentation | null }>(
       `/presentations/candidate/${candidateId}`
     );
     return res.data.data;

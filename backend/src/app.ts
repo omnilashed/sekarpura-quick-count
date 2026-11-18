@@ -20,6 +20,24 @@ export const createApp = (): Application => {
     helmet({
       crossOriginResourcePolicy: { policy: 'cross-origin' },
       crossOriginEmbedderPolicy: false,
+      crossOriginOpenerPolicy: false,
+      frameguard: false, // Izinkan framing agar viewer presentasi dapat di-embed di iframe Vercel / domain frontend
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'", 'https:', 'data:', 'blob:'],
+          frameAncestors: [
+            "'self'",
+            'https://sekarpura-quick-count.vercel.app',
+            'https://*.vercel.app',
+            'http://localhost:*',
+            'http://127.0.0.1:*',
+          ],
+          objectSrc: ["'self'", 'blob:', 'data:'],
+          imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+          scriptSrc: ["'self'", "'unsafe-inline'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+        },
+      },
     })
   );
 

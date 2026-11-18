@@ -215,6 +215,11 @@ export class PresentationController {
       return;
     }
 
+    // Izinkan preview di-embed di iframe dan object tag (Vercel, localhost, dll)
+    res.removeHeader('X-Frame-Options');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Security-Policy', "frame-ancestors *; object-src * blob: data:;");
     res.setHeader('Content-Type', 'application/pdf');
     const safeName = encodeURIComponent(presentation.originalFileName);
     res.setHeader('Content-Disposition', `inline; filename="${safeName}.pdf"`);
@@ -292,7 +297,11 @@ export class PresentationController {
       .sort({ version: -1, createdAt: -1 });
 
     if (!presentation) {
-      res.status(404).json({ success: false, message: 'Presentasi belum diunggah.' });
+      res.status(200).json({
+        success: true,
+        data: null,
+        message: 'Presentasi belum diunggah.',
+      });
       return;
     }
 
