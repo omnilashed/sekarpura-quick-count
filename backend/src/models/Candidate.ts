@@ -41,6 +41,7 @@ export interface ICandidate extends Document {
   verificationStatus: VerificationStatus;
   publicationStatus: PublicationStatus;
   rejectionReason?: string;
+  willingnessStatement?: 'BERSEDIA' | 'TIDAK_BERSEDIA' | 'DISKUALIFIKASI';
   stage1Qualified: boolean;
   stage2Qualified: boolean;
   createdAt: Date;
@@ -100,6 +101,12 @@ const CandidateSchema = new Schema<ICandidate>(
       index: true,
     },
     rejectionReason: { type: String },
+    willingnessStatement: {
+      type: String,
+      enum: ['BERSEDIA', 'TIDAK_BERSEDIA', 'DISKUALIFIKASI'],
+      default: 'TIDAK_BERSEDIA',
+      index: true,
+    },
     stage1Qualified: { type: Boolean, default: true },
     stage2Qualified: { type: Boolean, default: false },
   },

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import api from '../../services/api';
 import { Lock, Save, CheckCircle2, AlertCircle } from 'lucide-react';
+import { useAuthStore } from '../../stores/authStore';
 
 export const AccountSettingsPage: React.FC = () => {
   const [oldPassword, setOldPassword] = useState('');
@@ -29,6 +30,13 @@ export const AccountSettingsPage: React.FC = () => {
         newPassword,
       });
       setMessage({ type: 'success', text: res.data.message || 'Kata sandi berhasil diperbarui!' });
+      // Clear mustChangePassword in authStore and localStorage
+      const currentUser = useAuthStore.getState().user;
+      if (currentUser) {
+        const updated = { ...currentUser, mustChangePassword: false };
+        localStorage.setItem('sekarpura_user', JSON.stringify(updated));
+        useAuthStore.setState({ user: updated });
+      }
       setOldPassword('');
       setNewPassword('');
       setConfirmPassword('');

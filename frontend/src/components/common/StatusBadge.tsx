@@ -79,6 +79,20 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, type = 'stage'
           dot: 'bg-rose-500',
         };
 
+      // Statement status
+      case 'BERSEDIA':
+        return {
+          label: 'BERSEDIA',
+          bg: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30',
+          dot: 'bg-emerald-500',
+        };
+      case 'TIDAK_BERSEDIA':
+        return {
+          label: 'TIDAK BERSEDIA',
+          bg: 'bg-slate-500/15 text-slate-600 dark:text-slate-400 border-slate-500/30',
+          dot: 'bg-slate-400',
+        };
+
       // Vote source status
       case 'NOT_SUBMITTED':
         return {

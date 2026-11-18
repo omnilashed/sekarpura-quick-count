@@ -31,6 +31,30 @@ export const quickcountService = {
     return res.data;
   },
 
+  async updateSource(
+    id: string,
+    payload: {
+      sourceCode?: string;
+      sourceName?: string;
+      workUnit?: string;
+      location?: string;
+      targetVoters?: number;
+    }
+  ) {
+    const res = await api.put<{ success: boolean; message: string; data: VoteSource }>(
+      `/quickcount/sources/${id}`,
+      payload
+    );
+    return res.data;
+  },
+
+  async deleteSource(id: string) {
+    const res = await api.delete<{ success: boolean; message: string }>(
+      `/quickcount/sources/${id}`
+    );
+    return res.data;
+  },
+
   async submitVotes(payload: {
     stageId: string;
     sourceId: string;
@@ -43,6 +67,24 @@ export const quickcountService = {
       '/quickcount/submit-votes',
       payload
     );
+    return res.data;
+  },
+
+  async liveTally(payload: {
+    stageId: string;
+    sourceId: string;
+    candidateId?: string;
+    isInvalidVote?: boolean;
+    delta?: number;
+    votes?: Array<{ candidateId: string; candidateNumber: number; count: number }>;
+    invalidVotes?: number;
+  }) {
+    const res = await api.post<{
+      success: boolean;
+      message: string;
+      submission: any;
+      quickcount: QuickCountData;
+    }>('/quickcount/live-tally', payload);
     return res.data;
   },
 

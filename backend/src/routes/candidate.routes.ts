@@ -3,6 +3,7 @@ import { CandidateController } from '../controllers/candidate.controller.js';
 import { authenticate, optionalAuth } from '../middlewares/auth.js';
 import { requireRoles, requireCandidateSelfOrAdmin } from '../middlewares/rbac.js';
 import { uploadPhoto } from '../middlewares/upload.js';
+import { uploadRateLimiter } from '../middlewares/rateLimiter.js';
 
 const router = Router();
 
@@ -21,6 +22,7 @@ router.post(
   '/:id/photo',
   authenticate,
   requireCandidateSelfOrAdmin,
+  uploadRateLimiter,
   uploadPhoto.single('photo'),
   CandidateController.uploadPhoto
 );

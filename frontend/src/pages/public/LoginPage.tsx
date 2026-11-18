@@ -20,9 +20,11 @@ export const LoginPage: React.FC = () => {
     try {
       const result = await login(email, password);
       if (result.success) {
-        // Redirect based on role
+        // Redirect based on role and first login change password requirement
         const currentUser = useAuthStore.getState().user;
-        if (currentUser?.role === 'ADMIN' || currentUser?.role === 'SUPER_ADMIN') {
+        if (currentUser?.role === 'CANDIDATE' && currentUser?.mustChangePassword) {
+          navigate('/candidate/settings');
+        } else if (currentUser?.role === 'ADMIN' || currentUser?.role === 'SUPER_ADMIN') {
           navigate('/admin');
         } else if (currentUser?.role === 'CANDIDATE') {
           navigate('/candidate');
@@ -116,29 +118,23 @@ export const LoginPage: React.FC = () => {
             </button>
           </form>
 
-          {/* Quick Demo Switcher helper */}
+          {/* Quick Login helper */}
           <div className="mt-6 sm:mt-8 pt-5 sm:pt-6 border-t border-slate-100 dark:border-navy-800 text-xs">
             <p className="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2 text-center">
-              Pilihan Akun Demo / Simulasi:
+              Akses Cepat Administrator:
             </p>
-            <div className="grid grid-cols-1 xs:grid-cols-2 gap-2">
+            <div className="flex justify-center">
               <button
                 type="button"
                 onClick={() => setQuickCreds('admin@sekarpura-halim.org', 'AdminSekarpura2026!')}
-                className="p-2.5 rounded-xl border border-gold-500/30 bg-gold-500/10 hover:bg-gold-500/20 text-gold-700 dark:text-gold-300 font-bold text-[11px] transition-all text-center min-h-[40px] flex items-center justify-center"
+                className="w-full p-2.5 rounded-xl border border-gold-500/30 bg-gold-500/10 hover:bg-gold-500/20 text-gold-700 dark:text-gold-300 font-bold text-[11px] transition-all text-center min-h-[40px] flex items-center justify-center gap-1.5 shadow-sm"
               >
-                🔐 Super Admin
-              </button>
-              <button
-                type="button"
-                onClick={() => setQuickCreds('kandidat1@sekarpura-halim.org', 'Kandidat2026!')}
-                className="p-2.5 rounded-xl border border-electric-500/30 bg-electric-500/10 hover:bg-electric-500/20 text-electric-600 dark:text-electric-300 font-bold text-[11px] transition-all text-center min-h-[40px] flex items-center justify-center"
-              >
-                👤 Calon No. 1 (Hendra)
+                <span>🔐</span>
+                <span>Isi Otomatis Akun Super Admin</span>
               </button>
             </div>
             <p className="text-[9px] sm:text-[10px] text-slate-400 text-center mt-2.5">
-              Klik salah satu tombol untuk mengisi kredensial contoh secara instan.
+              Akun bakal calon ketua dapat didaftarkan melalui Admin Control Center.
             </p>
           </div>
         </div>

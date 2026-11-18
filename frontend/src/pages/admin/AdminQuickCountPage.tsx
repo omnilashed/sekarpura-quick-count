@@ -4,6 +4,9 @@ import {
   Download,
   CheckCircle2,
   AlertCircle,
+  Zap,
+  Plus,
+  Minus,
 } from 'lucide-react';
 import { quickcountService } from '../../services/quickcountService';
 import { electionService } from '../../services/electionService';
@@ -32,30 +35,47 @@ export const AdminQuickCountPage: React.FC = () => {
   const [showHistoryModal, setShowHistoryModal] = useState<boolean>(false);
 
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [tallyFeedback, setTallyFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     loadStages();
   }, []);
 
-  useEffect(() => {
-    if (selectedStageId) {
-      loadStageData(selectedStageId);
-    }
-  }, [selectedStageId]);
-
   const loadStages = async () => {
     try {
-      const data = await electionService.getStages();
-      setStages(data);
-      if (data.length > 0) {
-        setSelectedStageId(data[0]._id);
+      const overview = await electionService.getOverview();
+      const stageList = overview.stages;
+      setStages(stageList);
+
+      const activeId =
+        (typeof overview.election?.activeStageId === 'object'
+          ? (overview.election.activeStageId as any)?._id
+          : overview.election?.activeStageId) ||
+        stageList.find((s) => s.stageType === overview.election?.currentStage)?._id ||
+        stageList[0]?._id;
+
+      if (activeId) {
+        setSelectedStageId(activeId);
+        loadStageData(activeId, stageList);
       }
     } catch (err) {
       console.error(err);
+      electionService.getStages().then((data) => {
+        setStages(data);
+        if (data.length > 0) {
+          setSelectedStageId(data[0]._id);
+          loadStageData(data[0]._id, data);
+        }
+      });
     }
   };
 
-  const loadStageData = async (stageId: string) => {
+  const handleStageSelect = (stageId: string) => {
+    setSelectedStageId(stageId);
+    loadStageData(stageId, stages);
+  };
+
+  const loadStageData = async (stageId: string, currentStages?: ElectionStage[]) => {
     try {
       setLoading(true);
       const [srcList, candList] = await Promise.all([
@@ -65,8 +85,11 @@ export const AdminQuickCountPage: React.FC = () => {
       setSources(srcList);
 
       // Filter candidates for this stage
-      const stage = stages.find((s) => s._id === stageId);
+      const stageList = currentStages || stages;
+      const stage = stageList.find((s) => s._id === stageId);
       const stageCandIds = stage?.candidateIds?.map((c: any) => (typeof c === 'string' ? c : c._id)) || [];
+
+      // If stage has specific candidateIds registered, filter strictly by them
       const stageCandidates = candList.data.filter((c) =>
         stageCandIds.length > 0 ? stageCandIds.includes(c._id) : true
       );
@@ -123,6 +146,50 @@ export const AdminQuickCountPage: React.FC = () => {
   const validSum = Object.values(voteInputs).reduce((acc, curr) => acc + (Number(curr) || 0), 0);
   const totalSum = validSum + (Number(invalidVotes) || 0);
 
+  // Quick live tally (+1 / -1 per surat suara tanpa syarat simpan atau alasan revisi)
+  const handleQuickTally = async (candidateId: string | null, delta: number, isInvalid = false) => {
+    if (!selectedSourceId || !selectedStageId) {
+      setMessage({ type: 'error', text: 'Pilih sumber suara / TPS terlebih dahulu di atas.' });
+      return;
+    }
+
+    // Optimistic UI update
+    if (isInvalid) {
+      setInvalidVotes((prev) => Math.max(0, prev + delta));
+    } else if (candidateId) {
+      setVoteInputs((prev) => ({
+        ...prev,
+        [candidateId]: Math.max(0, (prev[candidateId] || 0) + delta),
+      }));
+    }
+
+    try {
+      const res = await quickcountService.liveTally({
+        stageId: selectedStageId,
+        sourceId: selectedSourceId,
+        candidateId: candidateId || undefined,
+        isInvalidVote: isInvalid,
+        delta,
+      });
+
+      const candName = candidateId
+        ? candidates.find((c) => c._id === candidateId)?.fullName || 'Calon'
+        : 'Suara Tidak Sah';
+      setTallyFeedback(
+        `✓ ${delta > 0 ? '+1' : '-1'} untuk ${candName} tersiar live! (Total saat ini: ${res.submission.totalVotes} suara)`
+      );
+      setTimeout(() => setTallyFeedback(null), 3500);
+
+      // Refresh sources in background to update status to VERIFIED
+      quickcountService.getSources(selectedStageId).then(setSources);
+    } catch (err: any) {
+      setMessage({
+        type: 'error',
+        text: err.response?.data?.message || 'Gagal mengirim live tally suara.',
+      });
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedSourceId || !selectedStageId) {
@@ -140,47 +207,18 @@ export const AdminQuickCountPage: React.FC = () => {
     }));
 
     try {
-      if (isCorrectionMode) {
-        // Correct Votes
-        if (!correctionReason || correctionReason.trim().length < 5) {
-          setMessage({
-            type: 'error',
-            text: 'Alasan koreksi wajib diisi minimal 5 karakter untuk keperluan kepatuhan audit.',
-          });
-          setSubmitting(false);
-          return;
-        }
+      // Use liveTally directly: updates or creates without throwing revision/conflict errors
+      const res = await quickcountService.liveTally({
+        stageId: selectedStageId,
+        sourceId: selectedSourceId,
+        votes: voteItems,
+        invalidVotes: Number(invalidVotes) || 0,
+      });
 
-        const res = await quickcountService.correctVotes({
-          stageId: selectedStageId,
-          sourceId: selectedSourceId,
-          votes: voteItems,
-          invalidVotes: Number(invalidVotes) || 0,
-          totalVotes: totalSum,
-          correctionReason,
-          notes,
-        });
-
-        setMessage({
-          type: 'success',
-          text: res.message || 'Koreksi data suara berhasil disiarkan secara real-time!',
-        });
-      } else {
-        // Submit New Votes
-        const res = await quickcountService.submitVotes({
-          stageId: selectedStageId,
-          sourceId: selectedSourceId,
-          votes: voteItems,
-          invalidVotes: Number(invalidVotes) || 0,
-          totalVotes: totalSum,
-          notes,
-        });
-
-        setMessage({
-          type: 'success',
-          text: res.message || 'Data suara berhasil diverifikasi dan disiarkan secara real-time!',
-        });
-      }
+      setMessage({
+        type: 'success',
+        text: `Data suara (${res.submission.totalVotes} suara) berhasil disimpan & disiarkan secara real-time!`,
+      });
 
       loadStageData(selectedStageId);
     } catch (err: any) {
@@ -222,7 +260,7 @@ export const AdminQuickCountPage: React.FC = () => {
           {stages.map((stg) => (
             <button
               key={stg._id}
-              onClick={() => setSelectedStageId(stg._id)}
+              onClick={() => handleStageSelect(stg._id)}
               className={`flex-1 sm:flex-none px-3.5 py-2 rounded-xl text-xs font-bold transition-all text-center min-h-[38px] flex items-center justify-center ${
                 selectedStageId === stg._id
                   ? 'bg-electric-600 text-white shadow-sm'
@@ -259,20 +297,38 @@ export const AdminQuickCountPage: React.FC = () => {
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-navy-800 pb-4 gap-2">
             <div>
               <h2 className="text-base sm:text-lg font-extrabold text-navy-900 dark:text-white">
-                {isCorrectionMode ? 'Formulir Koreksi Suara TPS' : 'Formulir Input Suara TPS'}
+                {isCorrectionMode ? 'Panel Hitung & Koreksi Suara TPS' : 'Panel Input & Hitung Suara TPS'}
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                {isCorrectionMode
-                  ? 'Koreksi rekapitulasi terverifikasi (memerlukan alasan revisi)'
-                  : 'Masukkan data suara dari Berita Acara resmi TPS'}
+                Pilih TPS, lalu klik <span className="font-bold text-emerald-600">+1 Live</span> saat surat suara dibacakan
               </p>
             </div>
             {isCorrectionMode && (
-              <span className="px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-500 font-black text-[10px] uppercase tracking-wider shrink-0">
-                Mode Koreksi
+              <span className="px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-black text-[10px] uppercase tracking-wider shrink-0">
+                Mode Siap Hitung
               </span>
             )}
           </div>
+
+          {/* Live Tally Quick Helper */}
+          <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-electric-500/10 to-transparent border border-emerald-500/30 flex items-start gap-3">
+            <Zap className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
+            <div className="text-xs">
+              <p className="font-extrabold text-navy-900 dark:text-white">
+                Mode Hitung Cepat per Surat Suara (Live Tally)
+              </p>
+              <p className="text-slate-500 dark:text-slate-400 mt-0.5">
+                Cukup klik tombol hijau <strong>+1 Live</strong> pada calon saat surat suara dibuka di forum. Suara otomatis bertambah dan langsung tayang real-time di beranda tanpa perlu klik tombol simpan atau isi alasan revisi!
+              </p>
+            </div>
+          </div>
+
+          {tallyFeedback && (
+            <div className="p-3 rounded-2xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-600 dark:text-emerald-400 text-xs font-bold flex items-center gap-2 animate-bounce">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span>{tallyFeedback}</span>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
             {/* Select TPS */}
@@ -297,27 +353,43 @@ export const AdminQuickCountPage: React.FC = () => {
 
             {/* Candidate Vote Inputs Grid */}
             <div className="space-y-2 sm:space-y-3">
-              <label className="block text-[11px] sm:text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                Rincian Perolehan Suara Calon
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="block text-[11px] sm:text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                  Perolehan Suara Calon (Klik +1 untuk Tambah Langsung)
+                </label>
+                <span className="text-[10px] text-slate-400 font-bold">
+                  Target: 25 Pemilih
+                </span>
+              </div>
 
-              <div className="grid grid-cols-1 xs:grid-cols-2 gap-2.5 sm:gap-3 max-h-[360px] overflow-y-auto pr-1">
+              <div className="grid grid-cols-1 gap-2.5 sm:gap-3 max-h-[380px] overflow-y-auto pr-1">
                 {candidates.map((cand) => (
                   <div
                     key={cand._id}
-                    className="p-3 rounded-2xl bg-slate-50 dark:bg-navy-800/60 border border-slate-200 dark:border-navy-700 flex items-center justify-between gap-2"
+                    className="p-3.5 rounded-2xl bg-slate-50 dark:bg-navy-800/60 border border-slate-200 dark:border-navy-700 flex items-center justify-between gap-2 hover:border-emerald-500/50 transition-colors"
                   >
                     <div className="min-w-0 flex-1">
-                      <span className="text-[9px] sm:text-[10px] font-bold px-1.5 py-0.2 rounded bg-slate-200 dark:bg-navy-700 text-slate-700 dark:text-slate-300">
+                      <span className="text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-200 dark:bg-navy-700 text-slate-700 dark:text-slate-300">
                         No. {cand.candidateNumber}
                       </span>
-                      <p className="font-extrabold text-xs text-navy-900 dark:text-white truncate mt-1">
-                        {cand.nickname}
+                      <p className="font-extrabold text-xs sm:text-sm text-navy-900 dark:text-white truncate mt-1">
+                        {cand.fullName}
                       </p>
                       <p className="text-[10px] text-slate-400 truncate">{cand.workUnit}</p>
                     </div>
 
-                    <div className="w-20 sm:w-24 shrink-0">
+                    {/* Quick Tally Controls */}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleQuickTally(cand._id, -1)}
+                        disabled={!selectedSourceId || (voteInputs[cand._id] || 0) <= 0}
+                        title="Kurangi 1 suara (-1)"
+                        className="w-8 h-8 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-navy-700 dark:hover:bg-navy-600 text-slate-700 dark:text-slate-200 font-black text-xs flex items-center justify-center transition-all disabled:opacity-30 min-h-[32px]"
+                      >
+                        <Minus className="w-3.5 h-3.5" />
+                      </button>
+
                       <input
                         type="number"
                         min="0"
@@ -329,8 +401,19 @@ export const AdminQuickCountPage: React.FC = () => {
                             [cand._id]: Math.max(0, parseInt(e.target.value) || 0),
                           })
                         }
-                        className="w-full text-right px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl bg-white dark:bg-navy-900 border border-slate-200 dark:border-navy-700 font-extrabold text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-electric-500 min-h-[38px]"
+                        className="w-14 text-center px-1.5 py-1.5 rounded-xl bg-white dark:bg-navy-900 border border-slate-200 dark:border-navy-700 font-extrabold text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-electric-500 min-h-[36px]"
                       />
+
+                      <button
+                        type="button"
+                        onClick={() => handleQuickTally(cand._id, 1)}
+                        disabled={!selectedSourceId}
+                        title="Tambah 1 suara (+1 langsung live!)"
+                        className="px-3 h-8 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-black text-xs flex items-center justify-center gap-1 shadow-md shadow-emerald-600/20 transition-all disabled:opacity-40 min-h-[32px]"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>1 Live</span>
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -342,46 +425,50 @@ export const AdminQuickCountPage: React.FC = () => {
               <label className="block text-[11px] sm:text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5 sm:mb-2">
                 Jumlah Suara Tidak Sah / Rusak
               </label>
-              <input
-                type="number"
-                min="0"
-                required
-                value={invalidVotes}
-                onChange={(e) => setInvalidVotes(Math.max(0, parseInt(e.target.value) || 0))}
-                className="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-navy-800 border border-slate-200 dark:border-navy-700 text-xs sm:text-sm font-bold focus:outline-none focus:ring-2 focus:ring-electric-500 min-h-[42px]"
-              />
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleQuickTally(null, -1, true)}
+                  disabled={!selectedSourceId || invalidVotes <= 0}
+                  title="Kurangi suara tidak sah (-1)"
+                  className="w-9 h-9 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-navy-700 text-slate-700 dark:text-slate-200 font-black text-xs flex items-center justify-center disabled:opacity-30 min-h-[36px]"
+                >
+                  <Minus className="w-3.5 h-3.5" />
+                </button>
+                <input
+                  type="number"
+                  min="0"
+                  required
+                  value={invalidVotes}
+                  onChange={(e) => setInvalidVotes(Math.max(0, parseInt(e.target.value) || 0))}
+                  className="w-20 text-center px-3 py-2 rounded-xl bg-white dark:bg-navy-900 border border-slate-200 dark:border-navy-700 text-xs sm:text-sm font-bold min-h-[38px]"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleQuickTally(null, 1, true)}
+                  disabled={!selectedSourceId}
+                  title="Tambah suara tidak sah (+1)"
+                  className="px-3.5 h-9 rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-black text-xs flex items-center justify-center gap-1 shadow-md shadow-rose-600/20 disabled:opacity-40 min-h-[36px]"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>1 Tidak Sah</span>
+                </button>
+              </div>
             </div>
 
             {/* Total Integrity Summary Box */}
             <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-100 dark:bg-navy-800 border border-slate-200 dark:border-navy-700 text-xs flex items-center justify-between gap-3">
               <div>
-                <p className="text-slate-500 dark:text-slate-400 text-[11px]">Total Akumulasi Suara Masuk</p>
+                <p className="text-slate-500 dark:text-slate-400 text-[11px]">Total Surat Suara Terhitung</p>
                 <p className="text-lg sm:text-xl font-black text-navy-900 dark:text-white mt-0.5">
-                  {totalSum} Suara
+                  {totalSum} <span className="text-xs font-normal text-slate-400">/ 25 Suara ({Math.max(0, 25 - totalSum)} tersisa)</span>
                 </p>
               </div>
               <div className="text-right text-[10px] sm:text-[11px] text-slate-400 shrink-0">
-                <p>Sah: <strong className="text-emerald-500">{validSum}</strong></p>
-                <p>Tidak Sah: <strong className="text-rose-500">{invalidVotes}</strong></p>
+                <p>Sah: <strong className="text-emerald-500 font-bold">{validSum}</strong></p>
+                <p>Tidak Sah: <strong className="text-rose-500 font-bold">{invalidVotes}</strong></p>
               </div>
             </div>
-
-            {/* Mandatory Correction Reason if Mode is Correction */}
-            {isCorrectionMode && (
-              <div>
-                <label className="block text-xs font-bold text-amber-500 uppercase tracking-wider mb-2">
-                  Alasan Koreksi / Revisi Berita Acara (Wajib untuk Audit) *
-                </label>
-                <textarea
-                  rows={2}
-                  required
-                  value={correctionReason}
-                  onChange={(e) => setCorrectionReason(e.target.value)}
-                  placeholder="Contoh: Koreksi formulir hasil perhitungan ulang saksi TPS..."
-                  className="w-full px-4 py-2.5 rounded-2xl bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/30 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                />
-              </div>
-            )}
 
             {/* Notes */}
             <div>
@@ -400,17 +487,16 @@ export const AdminQuickCountPage: React.FC = () => {
             <button
               type="submit"
               disabled={submitting || !selectedSourceId}
-              className={`w-full py-3 sm:py-3.5 rounded-2xl font-bold text-xs sm:text-sm text-white shadow-lg transition-all disabled:opacity-50 min-h-[44px] flex items-center justify-center ${
-                isCorrectionMode
-                  ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20'
-                  : 'bg-electric-600 hover:bg-electric-500 shadow-electric-600/20'
-              }`}
+              className="w-full py-3 sm:py-3.5 rounded-2xl font-bold text-xs sm:text-sm text-white shadow-lg bg-electric-600 hover:bg-electric-500 shadow-electric-600/20 transition-all disabled:opacity-50 min-h-[44px] flex items-center justify-center gap-2"
             >
-              {submitting
-                ? 'Memproses & Menyiarkan...'
-                : isCorrectionMode
-                ? 'Simpan Koreksi Suara (Kirim Realtime)'
-                : 'Verifikasi & Siarkan Suara Resmi TPS'}
+              {submitting ? (
+                'Menyinkronkan...'
+              ) : (
+                <>
+                  <Zap className="w-4 h-4" />
+                  <span>Simpan & Sinkronkan Semua Angka (Kirim Realtime)</span>
+                </>
+              )}
             </button>
           </form>
         </div>

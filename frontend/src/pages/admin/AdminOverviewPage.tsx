@@ -41,9 +41,16 @@ export const AdminOverviewPage: React.FC = () => {
       {/* Top Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h1 className="text-xl xs:text-2xl sm:text-3xl font-extrabold text-navy-900 dark:text-white leading-tight">
-            Dashboard Utama Pengelola Pemilihan
-          </h1>
+          <div className="flex flex-wrap items-center gap-2 mb-1">
+            <h1 className="text-xl xs:text-2xl sm:text-3xl font-extrabold text-navy-900 dark:text-white leading-tight">
+              Dashboard Utama Pengelola Pemilihan
+            </h1>
+            {data?.stageName && (
+              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-black bg-electric-500/15 text-electric-600 dark:text-electric-400 border border-electric-500/30">
+                Tahap Aktif: {data.stageName} ({data.stageStatus})
+              </span>
+            )}
+          </div>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
             Ringkasan progres real-time rekapitulasi suara dan pengawasan tahapan pemilihan
           </p>

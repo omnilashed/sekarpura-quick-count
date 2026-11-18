@@ -232,6 +232,25 @@ export const CandidateLayout: React.FC = () => {
         </header>
 
         <main className="flex-1 p-3 xs:p-4 sm:p-6 lg:p-8 overflow-y-auto">
+          {user?.mustChangePassword && (
+            <div className="mb-6 p-4 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+              <div className="flex items-center gap-3">
+                <Lock className="w-5 h-5 text-amber-500 shrink-0 animate-bounce" />
+                <div>
+                  <p className="font-extrabold text-xs sm:text-sm">Wajib Mengganti Kata Sandi Awal</p>
+                  <p className="text-[11px] sm:text-xs text-amber-800/80 dark:text-amber-300/80">
+                    Ini adalah login pertama kali Anda. Demi keamanan akun, Anda diwajibkan untuk mengubah kata sandi default.
+                  </p>
+                </div>
+              </div>
+              <Link
+                to="/candidate/settings"
+                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-navy-950 font-bold text-xs shrink-0 text-center transition-all shadow-md"
+              >
+                Ganti Kata Sandi Sekarang
+              </Link>
+            </div>
+          )}
           <Outlet />
         </main>
       </div>

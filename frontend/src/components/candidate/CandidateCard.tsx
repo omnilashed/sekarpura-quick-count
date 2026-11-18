@@ -29,7 +29,12 @@ export const CandidateCard: React.FC<CandidateCardProps> = ({ candidate }) => {
               No. Urut
             </span>
           </div>
-          <StatusBadge status={candidate.candidacyStatus} type="candidacy" />
+          <div className="flex flex-wrap items-center gap-1 justify-end">
+            {candidate.willingnessStatement && (
+              <StatusBadge status={candidate.willingnessStatement} />
+            )}
+            <StatusBadge status={candidate.candidacyStatus} type="candidacy" />
+          </div>
         </div>
 
         {/* Candidate Photo & Basic Info */}

@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { Presentation } from '../models/Presentation.js';
 import { Candidate } from '../models/Candidate.js';
+import { env } from '../config/env.js';
 import { AuthRequest } from '../middlewares/auth.js';
 import { PresentationService } from '../services/presentation.service.js';
 import { AuditService } from '../services/audit.service.js';
@@ -17,11 +18,14 @@ export class PresentationController {
       return;
     }
 
-    const { candidateId, title, description } = req.body;
-    const targetCandidateId = candidateId || req.user?.candidateId;
+    const { title, description } = req.body;
+    const isAdmin = req.user?.role === 'ADMIN' || req.user?.role === 'SUPER_ADMIN';
+    const targetCandidateId = isAdmin
+      ? req.body.candidateId || req.user?.candidateId
+      : req.user?.candidateId;
 
     if (!targetCandidateId) {
-      res.status(400).json({ success: false, message: 'ID kandidat tidak valid.' });
+      res.status(403).json({ success: false, message: 'Akses ditolak. ID kandidat tidak valid.' });
       return;
     }
 
@@ -200,8 +204,39 @@ export class PresentationController {
       return;
     }
 
+    const isOwner =
+      req.user?.candidateId &&
+      presentation.candidateId.toString() === req.user.candidateId;
+    const isAdmin = req.user?.role === 'ADMIN' || req.user?.role === 'SUPER_ADMIN';
+
+    if (!isOwner && !isAdmin) {
+      res.status(403).json({
+        success: false,
+        message: 'Akses ditolak. Anda tidak berhak menghapus presentasi ini.',
+      });
+      return;
+    }
+
     // Unlink candidate
-    await Candidate.updateOne({ presentationId: presentation._id }, { $unset: { presentationId: 1 } });
+    await Candidate.updateOne(
+      { presentationId: presentation._id },
+      { $unset: { presentationId: 1 } }
+    );
+
+    // Delete files on disk if they exist
+    try {
+      if (presentation.originalFileKey) {
+        const origPath = path.resolve(env.UPLOAD_DIR, presentation.originalFileKey);
+        if (fs.existsSync(origPath)) fs.unlinkSync(origPath);
+      }
+      if (presentation.convertedFileKey) {
+        const convPath = path.resolve(env.UPLOAD_DIR, presentation.convertedFileKey);
+        if (fs.existsSync(convPath)) fs.unlinkSync(convPath);
+      }
+    } catch (e) {
+      console.warn('[Presentation] File cleanup warning:', e);
+    }
+
     await Presentation.findByIdAndDelete(id);
 
     res.status(200).json({

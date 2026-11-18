@@ -239,22 +239,37 @@ export class ElectionController {
       await stage2.save();
     }
 
-    // Replicate / create Vote Sources for Stage 2 if not existing
+    // Mark Stage 1 as COMPLETED when advancing to Stage 2
     const stage1 = await ElectionStage.findOne({ electionId: election._id, stageType: 'STAGE_1' });
+    if (stage1 && stage1.status !== 'COMPLETED') {
+      stage1.status = 'COMPLETED';
+      stage1.endedAt = new Date();
+      await stage1.save();
+    }
+
+    // Replicate / create clean Vote Sources for Stage 2 if not existing
     if (stage1) {
       const existingSourcesStage2 = await VoteSource.countDocuments({ stageId: stage2._id });
       if (existingSourcesStage2 === 0) {
         const stage1Sources = await VoteSource.find({ stageId: stage1._id });
-        const newSources = stage1Sources.map((s) => ({
-          electionId: election._id,
-          stageId: stage2!._id,
-          sourceCode: s.sourceCode,
-          sourceName: s.sourceName,
-          workUnit: s.workUnit,
-          location: s.location,
-          targetVoters: s.targetVoters,
-          status: 'NOT_SUBMITTED',
-        }));
+        const newSources = stage1Sources.map((s) => {
+          let newName = s.sourceName
+            .replace(/Tahap 1/gi, 'Tahap 2')
+            .replace(/Penjaringan Bakal Calon/gi, 'Pemilihan Calon Definitif');
+          if (newName === s.sourceName) {
+            newName = `${s.sourceName} (Tahap 2)`;
+          }
+          return {
+            electionId: election._id,
+            stageId: stage2!._id,
+            sourceCode: s.sourceCode,
+            sourceName: newName,
+            workUnit: s.workUnit,
+            location: s.location,
+            targetVoters: s.targetVoters,
+            status: 'NOT_SUBMITTED',
+          };
+        });
         if (newSources.length > 0) {
           await VoteSource.insertMany(newSources);
         }

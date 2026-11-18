@@ -138,6 +138,19 @@ export const CandidatePresentationPage: React.FC = () => {
         </div>
       )}
 
+      {/* Tip Banner */}
+      <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-electric-500/10 to-gold-500/10 border border-electric-500/20 text-slate-700 dark:text-slate-300 text-xs flex items-start gap-3 shadow-sm">
+        <div className="w-6 h-6 rounded-lg bg-electric-500/20 text-electric-600 dark:text-electric-400 flex items-center justify-center shrink-0 mt-0.5">
+          <Upload className="w-3.5 h-3.5" />
+        </div>
+        <div>
+          <p className="font-bold text-navy-900 dark:text-white">Format Materi Terbaik:</p>
+          <p className="mt-0.5 text-[11px] leading-relaxed text-slate-600 dark:text-slate-400">
+            Sistem mendukung <strong>.pdf, .pptx, dan .ppt</strong>. Untuk presentasi yang memiliki tata letak grafis, diagram, dan tabel kompleks, disarankan mengunggah dalam format <strong>PDF (.pdf)</strong> (dari PowerPoint: <em>File &gt; Save As &gt; PDF</em>) agar seluruh tampilan visual tampil 100% presisi dan tajam di browser.
+          </p>
+        </div>
+      </div>
+
       {/* Upload Box */}
       <form onSubmit={handleUpload} className="bg-white dark:bg-navy-900 border border-slate-200 dark:border-navy-800 rounded-3xl p-4 xs:p-5 sm:p-8 shadow-sm space-y-4 sm:space-y-6">
         <h2 className="font-extrabold text-sm sm:text-base text-navy-900 dark:text-white">

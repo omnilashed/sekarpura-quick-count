@@ -127,11 +127,23 @@ export const HomePage: React.FC = () => {
         </div>
 
         {/* Candidate Cards Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-          {candidates.map((candidate) => (
-            <CandidateCard key={candidate._id} candidate={candidate} />
-          ))}
-        </div>
+        {candidates.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+            {candidates.map((candidate) => (
+              <CandidateCard key={candidate._id} candidate={candidate} />
+            ))}
+          </div>
+        ) : (
+          <div className="bg-white dark:bg-navy-900 border border-slate-200 dark:border-navy-800 rounded-3xl p-8 sm:p-12 text-center shadow-sm">
+            <Users className="w-10 h-10 sm:w-12 sm:h-12 text-slate-400 mx-auto mb-3" />
+            <h3 className="text-base sm:text-lg font-bold text-navy-900 dark:text-white">
+              Belum Ada Kandidat Terdaftar
+            </h3>
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto">
+              Data bakal calon ketua sedang dalam tahap pendaftaran atau verifikasi berkas oleh panitia pemilihan.
+            </p>
+          </div>
+        )}
       </section>
 
       {/* 5. Presentation Library Callout Banner */}

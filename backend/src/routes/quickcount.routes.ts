@@ -19,12 +19,36 @@ router.post(
   QuickCountController.createVoteSource
 );
 
+// Admin: Update vote source
+router.put(
+  '/sources/:id',
+  authenticate,
+  requireRoles('ADMIN', 'SUPER_ADMIN'),
+  QuickCountController.updateVoteSource
+);
+
+// Admin: Delete vote source
+router.delete(
+  '/sources/:id',
+  authenticate,
+  requireRoles('ADMIN', 'SUPER_ADMIN'),
+  QuickCountController.deleteVoteSource
+);
+
 // Admin: Submit initial votes
 router.post(
   '/submit-votes',
   authenticate,
   requireRoles('ADMIN', 'SUPER_ADMIN'),
   QuickCountController.submitVotes
+);
+
+// Admin: Live tally (penghitungan langsung per surat suara tanpa syarat revisi)
+router.post(
+  '/live-tally',
+  authenticate,
+  requireRoles('ADMIN', 'SUPER_ADMIN'),
+  QuickCountController.liveTally
 );
 
 // Admin: Correct votes (revisions with audit)

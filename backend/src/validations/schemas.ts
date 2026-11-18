@@ -19,6 +19,7 @@ export const createCandidateUserSchema = z.object({
   mission: z.array(z.string()).optional(),
   expectations: z.string().optional(),
   campaignMessage: z.string().optional(),
+  willingnessStatement: z.enum(['BERSEDIA', 'TIDAK_BERSEDIA', 'DISKUALIFIKASI']).optional(),
 });
 
 export const updateCandidateProfileSchema = z.object({
@@ -60,6 +61,7 @@ export const verifyCandidateSchema = z.object({
   verificationStatus: z.enum(['PENDING', 'VERIFIED', 'REJECTED']),
   publicationStatus: z.enum(['DRAFT', 'PUBLISHED', 'ARCHIVED']).optional(),
   rejectionReason: z.string().optional(),
+  willingnessStatement: z.enum(['BERSEDIA', 'TIDAK_BERSEDIA', 'DISKUALIFIKASI']).optional(),
   candidacyStatus: z.enum(['BAKAL_CALON', 'CALON_TETAP', 'DISKUALIFIKASI', 'TERPILIH']).optional(),
 });
 

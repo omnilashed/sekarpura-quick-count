@@ -5,7 +5,7 @@ export const ElectionInfoPage: React.FC = () => {
   const stagesSchedule = [
     {
       stage: 'Tahap 1: Pendaftaran & Verifikasi Berkas',
-      date: '10 - 20 Oktober 2026',
+      date: '15 - 20 Oktober 2026',
       status: 'Selesai',
       desc: 'Pendaftaran seluruh bakal calon ketua dan verifikasi kelengkapan syarat administratif keanggotaan serikat.',
     },
@@ -17,19 +17,19 @@ export const ElectionInfoPage: React.FC = () => {
     },
     {
       stage: 'Tahap 3: Pemungutan & QuickCount Tahap 1',
-      date: '2 November 2026',
-      status: 'Sedang Berlangsung',
+      date: '9 November 2026',
+      status: 'Selesai',
       desc: 'Pemilihan tahap penjaringan bakal calon dan rekapitulasi cepat untuk menentukan 5 calon definitif.',
     },
     {
       stage: 'Tahap 4: Pemilihan Calon Ketua Definitif',
-      date: '4 November 2026',
+      date: '20 November 2026',
       status: 'Mendatang',
       desc: 'Pemilihan final penentuan Ketua SEKARPURA Cabang Halim Perdanakusuma Masa Bakti 2026-2029.',
     },
     {
       stage: 'Tahap 5: Penetapan & Pelantikan Pengurus',
-      date: '10 November 2026',
+      date: '20 November 2026',
       status: 'Mendatang',
       desc: 'Penyerahan mandat kepengurusan resmi dan pelantikan dewan pengurus cabang terpilih.',
     },

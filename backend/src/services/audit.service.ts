@@ -1,37 +1,46 @@
 import { VoteAuditLog } from '../models/VoteAuditLog.js';
-import mongoose from 'express';
+import mongoose from 'mongoose';
 
 export interface CreateAuditLogParams {
   electionId?: any;
   stageId?: any;
   actorId?: any;
-  actorName: string;
-  actorRole: string;
+  actorName?: string;
+  actorRole?: string;
   ipAddress?: string;
   action: string;
-  entityType: string;
-  entityId: string;
+  entityType?: string;
+  entityId?: string;
+  resourceType?: string;
+  resourceId?: string;
+  details?: any;
   before?: any;
   after?: any;
-  reason: string;
+  reason?: string;
 }
 
 export class AuditService {
   static async record(params: CreateAuditLogParams) {
     try {
+      const entityType = params.entityType || params.resourceType || 'SYSTEM';
+      const entityId = params.entityId || params.resourceId || 'N/A';
+      const reason = params.reason || params.action || 'Perekaman audit otomatis';
+      const actorRole = params.actorRole || 'ADMIN';
+      const actorName = params.actorName || 'System User';
+
       const log = new VoteAuditLog({
         electionId: params.electionId,
         stageId: params.stageId,
         actorId: params.actorId,
-        actorName: params.actorName,
-        actorRole: params.actorRole,
+        actorName,
+        actorRole,
         ipAddress: params.ipAddress,
         action: params.action,
-        entityType: params.entityType,
-        entityId: params.entityId,
-        before: params.before,
+        entityType,
+        entityId,
+        before: params.before || params.details,
         after: params.after,
-        reason: params.reason,
+        reason,
         timestamp: new Date(),
       });
       await log.save();

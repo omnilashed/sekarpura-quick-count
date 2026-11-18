@@ -4,6 +4,7 @@ import { QuickCountService } from '../services/quickcount.service.js';
 import { VoteSource } from '../models/VoteSource.js';
 import { VoteSubmission } from '../models/VoteSubmission.js';
 import { ElectionStage } from '../models/ElectionStage.js';
+import { Candidate } from '../models/Candidate.js';
 import { AuthRequest } from '../middlewares/auth.js';
 import { AuditService } from '../services/audit.service.js';
 import {
@@ -135,6 +136,26 @@ export class QuickCountController {
     if (!source) {
       res.status(404).json({ success: false, message: 'Sumber suara / TPS tidak ditemukan.' });
       return;
+    }
+
+    if (source.stageId.toString() !== stage._id.toString()) {
+      res.status(400).json({
+        success: false,
+        message: 'Sumber suara / TPS tidak sesuai dengan tahap pemilihan yang dipilih.',
+      });
+      return;
+    }
+
+    // Integrity check: Verify candidates belong to this stage
+    const stageCandIds = stage.candidateIds.map((c: any) => c.toString());
+    for (const v of validated.votes) {
+      if (!stageCandIds.includes(v.candidateId)) {
+        res.status(400).json({
+          success: false,
+          message: `Kandidat dengan ID '${v.candidateId}' tidak terdaftar pada tahap pemilihan ini.`,
+        });
+        return;
+      }
     }
 
     // Integrity check: Check if submission already exists
@@ -273,6 +294,26 @@ export class QuickCountController {
       return;
     }
 
+    if (source.stageId.toString() !== stage._id.toString()) {
+      res.status(400).json({
+        success: false,
+        message: 'Sumber suara / TPS tidak sesuai dengan tahap pemilihan yang dipilih.',
+      });
+      return;
+    }
+
+    // Integrity check: Verify candidates belong to this stage
+    const stageCandIds = stage.candidateIds.map((c: any) => c.toString());
+    for (const v of validated.votes) {
+      if (!stageCandIds.includes(v.candidateId)) {
+        res.status(400).json({
+          success: false,
+          message: `Kandidat dengan ID '${v.candidateId}' tidak terdaftar pada tahap pemilihan ini.`,
+        });
+        return;
+      }
+    }
+
     // Find previous latest revision
     const prevSubmission = await VoteSubmission.findOne({
       stageId: stage._id,
@@ -373,6 +414,222 @@ export class QuickCountController {
       success: true,
       message: `Koreksi data suara (Revisi #${newRevisionNumber}) berhasil disimpan dan disinkronkan.`,
       submission: newSubmission,
+      quickcount: quickcountData,
+    });
+  }
+
+  /**
+   * Admin: Update Vote Source / TPS
+   */
+  static async updateVoteSource(req: AuthRequest, res: Response): Promise<void> {
+    const { id } = req.params;
+    const { sourceCode, sourceName, workUnit, location, targetVoters } = req.body;
+
+    const source = await VoteSource.findById(id);
+    if (!source) {
+      res.status(404).json({ success: false, message: 'Sumber suara / TPS tidak ditemukan.' });
+      return;
+    }
+
+    if (sourceCode && sourceCode.toUpperCase() !== source.sourceCode) {
+      const existing = await VoteSource.findOne({
+        stageId: source.stageId,
+        sourceCode: sourceCode.toUpperCase(),
+        _id: { $ne: source._id },
+      });
+      if (existing) {
+        res.status(409).json({
+          success: false,
+          message: `Kode sumber suara '${sourceCode.toUpperCase()}' sudah digunakan pada tahap ini.`,
+        });
+        return;
+      }
+      source.sourceCode = sourceCode.toUpperCase();
+    }
+
+    if (sourceName) source.sourceName = sourceName;
+    if (workUnit) source.workUnit = workUnit;
+    if (location) source.location = location;
+    if (targetVoters !== undefined) source.targetVoters = Number(targetVoters);
+
+    await source.save();
+
+    await AuditService.record({
+      actorId: req.user?.id,
+      actorName: req.user?.name || 'Admin',
+      actorRole: req.user?.role || 'ADMIN',
+      action: 'VOTE_SOURCE_UPDATED',
+      entityType: 'VOTE_SOURCE',
+      entityId: source._id.toString(),
+      details: { sourceCode: source.sourceCode, sourceName: source.sourceName },
+      reason: `Pembaruan data TPS/Sumber Suara ${source.sourceCode}`,
+      ipAddress: req.ip,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Sumber suara / TPS berhasil diperbarui.',
+      data: source,
+    });
+  }
+
+  /**
+   * Admin: Delete Vote Source / TPS
+   */
+  static async deleteVoteSource(req: AuthRequest, res: Response): Promise<void> {
+    const { id } = req.params;
+
+    const source = await VoteSource.findById(id);
+    if (!source) {
+      res.status(404).json({ success: false, message: 'Sumber suara / TPS tidak ditemukan.' });
+      return;
+    }
+
+    if (source.status === 'VERIFIED') {
+      res.status(403).json({
+        success: false,
+        message: 'Sumber suara ini telah diverifikasi dan memiliki data suara resmi. Tidak dapat dihapus.',
+      });
+      return;
+    }
+
+    // Delete any draft submissions associated with this source
+    await VoteSubmission.deleteMany({ sourceId: source._id });
+    await VoteSource.findByIdAndDelete(source._id);
+
+    await AuditService.record({
+      actorId: req.user?.id,
+      actorName: req.user?.name || 'Admin',
+      actorRole: req.user?.role || 'ADMIN',
+      action: 'VOTE_SOURCE_DELETED',
+      entityType: 'VOTE_SOURCE',
+      entityId: source._id.toString(),
+      details: { sourceCode: source.sourceCode, sourceName: source.sourceName },
+      reason: `Penghapusan data TPS/Sumber Suara ${source.sourceCode}`,
+      ipAddress: req.ip,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Sumber suara ${source.sourceCode} berhasil dihapus.`,
+    });
+  }
+
+  /**
+   * Admin: Live Tally (+1 / -1 per surat suara tanpa syarat revisi)
+   */
+  static async liveTally(req: AuthRequest, res: Response): Promise<void> {
+    const { stageId, sourceId, candidateId, isInvalidVote, delta = 1, votes, invalidVotes } = req.body;
+
+    const stage = await ElectionStage.findById(stageId);
+    if (!stage) {
+      res.status(404).json({ success: false, message: 'Tahap pemilihan tidak ditemukan.' });
+      return;
+    }
+
+    if (stage.status === 'LOCKED' || stage.status === 'COMPLETED') {
+      res.status(403).json({
+        success: false,
+        message: 'Tahap pemilihan telah dikunci/selesai.',
+      });
+      return;
+    }
+
+    const source = await VoteSource.findById(sourceId);
+    if (!source) {
+      res.status(404).json({ success: false, message: 'Sumber suara tidak ditemukan.' });
+      return;
+    }
+
+    // Find existing latest submission or initialize one
+    let submission = await VoteSubmission.findOne({
+      stageId: stage._id,
+      sourceId: source._id,
+      isLatestRevision: true,
+    });
+
+    if (!submission) {
+      const candidates = await Candidate.find({ _id: { $in: stage.candidateIds } });
+      const initialVotes = candidates.map((c) => ({
+        candidateId: c._id,
+        candidateNumber: c.candidateNumber,
+        count: 0,
+      }));
+
+      submission = new VoteSubmission({
+        electionId: stage.electionId,
+        stageId: stage._id,
+        sourceId: source._id,
+        votes: initialVotes,
+        invalidVotes: 0,
+        totalVotes: 0,
+        revision: 1,
+        isLatestRevision: true,
+        verificationStatus: 'VERIFIED',
+        submittedBy: req.user?.id,
+        verifiedBy: req.user?.id,
+        verifiedAt: new Date(),
+        notes: 'Live Tally Mode (Penghitungan per Lembar Surat Suara)',
+      });
+    }
+
+    // Apply incremental or bulk update
+    if (Array.isArray(votes)) {
+      submission.votes = votes.map((v: any) => ({
+        candidateId: new mongoose.Types.ObjectId(v.candidateId),
+        candidateNumber: v.candidateNumber,
+        count: Math.max(0, Number(v.count) || 0),
+      }));
+      if (invalidVotes !== undefined) {
+        submission.invalidVotes = Math.max(0, Number(invalidVotes) || 0);
+      }
+    } else if (isInvalidVote) {
+      submission.invalidVotes = Math.max(0, submission.invalidVotes + Number(delta));
+    } else if (candidateId) {
+      const targetVote = submission.votes.find(
+        (v) => v.candidateId.toString() === candidateId.toString()
+      );
+      if (targetVote) {
+        targetVote.count = Math.max(0, targetVote.count + Number(delta));
+      } else {
+        const cand = await Candidate.findById(candidateId);
+        if (cand) {
+          submission.votes.push({
+            candidateId: cand._id,
+            candidateNumber: cand.candidateNumber,
+            count: Math.max(0, Number(delta)),
+          });
+        }
+      }
+    }
+
+    // Recalculate total votes
+    const sumValid = submission.votes.reduce((acc, curr) => acc + curr.count, 0);
+    submission.totalVotes = sumValid + submission.invalidVotes;
+    submission.verifiedAt = new Date();
+    await submission.save();
+
+    // Ensure source status is verified
+    source.status = 'VERIFIED';
+    source.activeSubmissionId = submission._id as any;
+    await source.save();
+
+    // Recalculate quickcount
+    const quickcountData = await QuickCountService.calculateStageQuickCount(stage._id.toString());
+
+    // Broadcast instant WebSocket update
+    broadcastQuickCountUpdate({
+      electionId: stage.electionId.toString(),
+      stageId: stage._id.toString(),
+      quickcountData,
+      leaderChanged: quickcountData.leaderChanged,
+      message: `Suara langsung diperbarui (${submission.totalVotes} suara)`,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Live tally berhasil (${submission.totalVotes} suara)`,
+      submission,
       quickcount: quickcountData,
     });
   }

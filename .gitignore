@@ -48,3 +48,14 @@ temp/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+.mongo-data/
+*/.mongo-data/
+
+# Credentials & generated candidate lists
+daftar-akun*
+*.xlsx
+*.xls
+credentials/
+secrets/
+backend/src/seeds/inputRealCandidates.ts

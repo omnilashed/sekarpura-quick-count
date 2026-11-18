@@ -151,6 +151,7 @@ export class CandidateController {
       role: 'CANDIDATE',
       status: 'ACTIVE',
       candidateId: candidate._id,
+      mustChangePassword: true,
     });
 
     await user.save();

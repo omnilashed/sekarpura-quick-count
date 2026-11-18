@@ -9,6 +9,7 @@ export interface User {
   status: UserStatus;
   candidateId?: string;
   candidate?: Candidate;
+  mustChangePassword?: boolean;
   lastLoginAt?: string;
 }
 
@@ -50,6 +51,7 @@ export interface Candidate {
   verificationStatus: 'PENDING' | 'VERIFIED' | 'REJECTED';
   publicationStatus: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
   rejectionReason?: string;
+  willingnessStatement?: 'BERSEDIA' | 'TIDAK_BERSEDIA' | 'DISKUALIFIKASI';
   stage1Qualified: boolean;
   stage2Qualified: boolean;
   createdAt: string;

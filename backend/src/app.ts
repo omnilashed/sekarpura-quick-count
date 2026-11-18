@@ -3,10 +3,10 @@ import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import path from 'path';
-import { rateLimit } from 'express-rate-limit';
 import { env } from './config/env.js';
 import routes from './routes/index.js';
 import { errorHandler } from './middlewares/errorHandler.js';
+import { globalApiRateLimiter, postMutationRateLimiter } from './middlewares/rateLimiter.js';
 
 export const createApp = (): Application => {
   const app = express();
@@ -19,25 +19,35 @@ export const createApp = (): Application => {
     })
   );
 
-  // CORS
+  // CORS Configuration with strict origin check
+  const isAllowedOrigin = (origin?: string): boolean => {
+    if (!origin) return true; // allow same-origin, curl, server-to-server, mobile
+    if (origin === env.CORS_ORIGIN) return true;
+    if (origin.endsWith('.vercel.app') || origin.endsWith('.netlify.app')) return true;
+    if (origin.includes('localhost') || origin.includes('127.0.0.1')) return true;
+    return false;
+  };
+
   app.use(
     cors({
-      origin: [env.CORS_ORIGIN, 'http://localhost:5173', 'http://127.0.0.1:5173'],
+      origin: (origin, callback) => {
+        if (isAllowedOrigin(origin)) {
+          callback(null, true);
+        } else {
+          callback(new Error(`Akses diblokir oleh kebijakan CORS untuk origin: ${origin}`));
+        }
+      },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
     })
   );
 
-  // Rate Limiting
-  const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 1000, // Limit each IP to 1000 requests per windowMs
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { success: false, message: 'Terlalu banyak permintaan dari IP ini. Coba lagi nanti.' },
-  });
-  app.use('/api', limiter);
+  // Global Rate Limiting across all API routes
+  app.use('/api', globalApiRateLimiter);
+
+  // Rate Limiting strictly for all state-changing requests (POST, PUT, PATCH, DELETE)
+  app.use('/api', postMutationRateLimiter);
 
   // Body Parsing
   app.use(express.json({ limit: '10mb' }));

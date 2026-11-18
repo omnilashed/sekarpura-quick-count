@@ -3,6 +3,7 @@ import { PresentationController } from '../controllers/presentation.controller.j
 import { authenticate } from '../middlewares/auth.js';
 import { requireRoles } from '../middlewares/rbac.js';
 import { uploadPresentation } from '../middlewares/upload.js';
+import { uploadRateLimiter } from '../middlewares/rateLimiter.js';
 
 const router = Router();
 
@@ -15,6 +16,7 @@ router.get('/:id', PresentationController.getById);
 router.post(
   '/upload',
   authenticate,
+  uploadRateLimiter,
   uploadPresentation.single('file'),
   PresentationController.upload
 );

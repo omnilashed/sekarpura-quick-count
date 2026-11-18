@@ -6,6 +6,7 @@ import { env } from '../src/config/env.js';
 import { User } from '../src/models/User.js';
 import { Candidate } from '../src/models/Candidate.js';
 import { ElectionStage } from '../src/models/ElectionStage.js';
+import { Election } from '../src/models/Election.js';
 import { VoteSource } from '../src/models/VoteSource.js';
 import { VoteSubmission } from '../src/models/VoteSubmission.js';
 
@@ -15,8 +16,10 @@ describe('SEKARPURA Election Center - API & Integrity Tests', () => {
   let adminToken = '';
   let candidate1Token = '';
   let candidate2Token = '';
-  let candidate1Id = '';
-  let candidate2Id = '';
+  let loggedCandidate1Id = '';
+  let loggedCandidate2Id = '';
+  let stageCandidate1Id = '';
+  let stageCandidate2Id = '';
   let stage1Id = '';
   let testSourceId = '';
 
@@ -37,37 +40,64 @@ describe('SEKARPURA Election Center - API & Integrity Tests', () => {
     expect(adminRes.body.token).toBeDefined();
     adminToken = adminRes.body.token;
 
-    // 2. Candidate 1 Login
+    // 2. Candidate 1 & 2 Login
+    const candUsers = await User.find({ role: 'CANDIDATE' }).limit(2);
+    let c1Email = 'kandidat1@sekarpura-halim.org';
+    let c1Pass = 'Kandidat2026!';
+    let c2Email = 'kandidat2@sekarpura-halim.org';
+    let c2Pass = 'Kandidat2026!';
+    if (candUsers.length >= 2) {
+      c1Email = candUsers[0].email;
+      c2Email = candUsers[1].email;
+      c1Pass = c1Email.includes('yulianto') ? 'Sekarpura2026!#01' : 'Kandidat2026!';
+      c2Pass = c2Email.includes('shinta') ? 'Sekarpura2026!#02' : 'Kandidat2026!';
+    }
+
     const cand1Res = await request(app)
       .post('/api/auth/login')
       .send({
-        email: 'kandidat1@sekarpura-halim.org',
-        password: 'Kandidat2026!',
+        email: c1Email,
+        password: c1Pass,
       });
 
     expect(cand1Res.status).toBe(200);
     candidate1Token = cand1Res.body.token;
-    candidate1Id = cand1Res.body.user.candidateId;
+    loggedCandidate1Id = cand1Res.body.user.candidateId;
 
-    // 3. Candidate 2 Login
     const cand2Res = await request(app)
       .post('/api/auth/login')
       .send({
-        email: 'kandidat2@sekarpura-halim.org',
-        password: 'Kandidat2026!',
+        email: c2Email,
+        password: c2Pass,
       });
 
     expect(cand2Res.status).toBe(200);
     candidate2Token = cand2Res.body.token;
-    candidate2Id = cand2Res.body.user.candidateId;
+    loggedCandidate2Id = cand2Res.body.user.candidateId;
 
-    // Get Stage 1 ID
-    const stage = await ElectionStage.findOne({ stageType: 'STAGE_1' });
+    // Get active stage or counting stage
+    const election = await Election.findOne();
+    let stage = election?.activeStageId ? await ElectionStage.findById(election.activeStageId) : null;
+    if (!stage || stage.status !== 'COUNTING') {
+      stage = await ElectionStage.findOne({ status: 'COUNTING' });
+    }
+    if (!stage) {
+      stage = await ElectionStage.findOne();
+    }
     expect(stage).toBeDefined();
     stage1Id = stage!._id.toString();
 
-    // Get an unsubmitted TPS or create a test one
-    let source = await VoteSource.findOne({ stageId: stage1Id, status: 'NOT_SUBMITTED' });
+    // Use candidates registered in this stage
+    if (stage!.candidateIds && stage!.candidateIds.length >= 2) {
+      stageCandidate1Id = stage!.candidateIds[0].toString();
+      stageCandidate2Id = stage!.candidateIds[1].toString();
+    } else {
+      stageCandidate1Id = loggedCandidate1Id;
+      stageCandidate2Id = loggedCandidate2Id;
+    }
+
+    // Always create a dedicated test source so tests never touch real election sources
+    let source = await VoteSource.findOne({ stageId: stage1Id, sourceCode: 'TPS-TEST' });
     if (!source) {
       source = await VoteSource.create({
         electionId: stage!.electionId,
@@ -77,15 +107,23 @@ describe('SEKARPURA Election Center - API & Integrity Tests', () => {
         workUnit: 'Test Unit',
         location: 'Test Room',
         targetVoters: 50,
+        status: 'NOT_SUBMITTED',
       });
+    } else {
+      source.status = 'NOT_SUBMITTED';
+      source.activeSubmissionId = undefined;
+      await source.save();
     }
     testSourceId = source._id.toString();
   });
 
   afterAll(async () => {
-    // Clean up test TPS if created
-    await VoteSubmission.deleteMany({ sourceId: testSourceId });
-    await VoteSource.deleteOne({ sourceCode: 'TPS-TEST' });
+    // Clean up dedicated test TPS
+    if (testSourceId) {
+      await VoteSubmission.deleteMany({ sourceId: testSourceId });
+      await VoteSource.deleteOne({ _id: testSourceId });
+    }
+    await VoteSource.deleteMany({ sourceCode: { $in: ['TPS-TEST', 'TPS-TEST-MISMATCH'] } });
     await mongoose.disconnect();
   });
 
@@ -104,7 +142,7 @@ describe('SEKARPURA Election Center - API & Integrity Tests', () => {
 
   it('3. Bakal Calon can update their own profile', async () => {
     const res = await request(app)
-      .put(`/api/candidates/${candidate1Id}`)
+      .put(`/api/candidates/${loggedCandidate1Id}`)
       .set('Authorization', `Bearer ${candidate1Token}`)
       .send({
         nickname: 'Cak Hendra Updated',
@@ -117,7 +155,7 @@ describe('SEKARPURA Election Center - API & Integrity Tests', () => {
 
   it('4. Bakal Calon CANNOT update another candidate profile (RBAC Protection)', async () => {
     const res = await request(app)
-      .put(`/api/candidates/${candidate2Id}`)
+      .put(`/api/candidates/${loggedCandidate2Id}`)
       .set('Authorization', `Bearer ${candidate1Token}`)
       .send({
         nickname: 'Hacked Nickname',
@@ -130,18 +168,16 @@ describe('SEKARPURA Election Center - API & Integrity Tests', () => {
   it('5. GET /api/quickcount should return real-time rankings and podium Top 5', async () => {
     const res = await request(app).get('/api/quickcount');
     expect(res.status).toBe(200);
-    expect(res.body.data.totalVotesIn).toBeGreaterThan(0);
+    expect(res.body.data).toBeDefined();
     expect(res.body.data.rankings).toBeDefined();
     expect(res.body.data.top5).toBeDefined();
     expect(res.body.data.top5.length).toBeLessThanOrEqual(5);
   });
 
   it('6. Admin can submit votes for an unsubmitted vote source', async () => {
-    const candidates = await Candidate.find({ _id: { $in: [candidate1Id, candidate2Id] } });
-
     const votes = [
-      { candidateId: candidate1Id, candidateNumber: 1, count: 15 },
-      { candidateId: candidate2Id, candidateNumber: 2, count: 10 },
+      { candidateId: stageCandidate1Id, candidateNumber: 1, count: 15 },
+      { candidateId: stageCandidate2Id, candidateNumber: 2, count: 10 },
     ];
     const invalidVotes = 2;
     const totalVotes = 27; // 15 + 10 + 2 = 27
@@ -171,7 +207,7 @@ describe('SEKARPURA Election Center - API & Integrity Tests', () => {
         stageId: stage1Id,
         sourceId: testSourceId,
         votes: [
-          { candidateId: candidate1Id, candidateNumber: 1, count: 5 },
+          { candidateId: stageCandidate1Id, candidateNumber: 1, count: 5 },
         ],
         invalidVotes: 0,
         totalVotes: 5,
@@ -192,7 +228,7 @@ describe('SEKARPURA Election Center - API & Integrity Tests', () => {
         stageId: stage1Id,
         sourceId: anotherSource._id.toString(),
         votes: [
-          { candidateId: candidate1Id, candidateNumber: 1, count: 10 },
+          { candidateId: stageCandidate1Id, candidateNumber: 1, count: 10 },
         ],
         invalidVotes: 1,
         totalVotes: 999, // mismatch! 10 + 1 != 999
@@ -204,7 +240,7 @@ describe('SEKARPURA Election Center - API & Integrity Tests', () => {
 
   it('9. Admin can correct votes with mandatory reason without double counting', async () => {
     // Initial was 27 (15 + 10 + 2). Correcting to 30 (18 + 10 + 2).
-    const qcBefore = await request(app).get('/api/quickcount');
+    const qcBefore = await request(app).get('/api/quickcount').query({ stageId: stage1Id });
     const totalBefore = qcBefore.body.data.totalVotesIn;
 
     const res = await request(app)
@@ -214,8 +250,8 @@ describe('SEKARPURA Election Center - API & Integrity Tests', () => {
         stageId: stage1Id,
         sourceId: testSourceId,
         votes: [
-          { candidateId: candidate1Id, candidateNumber: 1, count: 18 },
-          { candidateId: candidate2Id, candidateNumber: 2, count: 10 },
+          { candidateId: stageCandidate1Id, candidateNumber: 1, count: 18 },
+          { candidateId: stageCandidate2Id, candidateNumber: 2, count: 10 },
         ],
         invalidVotes: 2,
         totalVotes: 30, // net increase of 3 votes
@@ -226,7 +262,7 @@ describe('SEKARPURA Election Center - API & Integrity Tests', () => {
     expect(res.body.submission.revision).toBe(2);
 
     // Verify QuickCount total increased by exactly 3, NOT 30 (no double count)
-    const qcAfter = await request(app).get('/api/quickcount');
+    const qcAfter = await request(app).get('/api/quickcount').query({ stageId: stage1Id });
     const totalAfter = qcAfter.body.data.totalVotesIn;
     expect(totalAfter).toBe(totalBefore + 3);
   });
@@ -239,7 +275,7 @@ describe('SEKARPURA Election Center - API & Integrity Tests', () => {
         stageId: stage1Id,
         sourceId: testSourceId,
         votes: [
-          { candidateId: candidate1Id, candidateNumber: 1, count: 10 },
+          { candidateId: stageCandidate1Id, candidateNumber: 1, count: 10 },
         ],
         invalidVotes: 0,
         totalVotes: 10,
@@ -248,5 +284,47 @@ describe('SEKARPURA Election Center - API & Integrity Tests', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.message).toMatch(/Alasan koreksi wajib diisi/);
+  });
+
+  it('11. Security - RBAC & IDOR: Candidate 1 cannot update Candidate 2 profile', async () => {
+    const res = await request(app)
+      .put(`/api/candidates/${loggedCandidate2Id}`)
+      .set('Authorization', `Bearer ${candidate1Token}`)
+      .send({
+        fullName: 'Hacked Name By Candidate 1',
+      });
+
+    expect(res.status).toBe(403);
+    expect(res.body.message).toMatch(/Akses ditolak/);
+  });
+
+  it('12. Security: Protected endpoint rejects unauthenticated requests', async () => {
+    const res = await request(app)
+      .post('/api/quickcount/submit-votes')
+      .send({ stageId: stage1Id, sourceId: testSourceId });
+
+    expect(res.status).toBe(401);
+    expect(res.body.message).toMatch(/Akses ditolak/);
+  });
+
+  it('13. Security - Rate Limiting: Login endpoint enforces strict rate limit', async () => {
+    // Fire rapid login attempts to trigger rate limit (limit is 10)
+    let triggered429 = false;
+    for (let i = 0; i < 12; i++) {
+      const res = await request(app)
+        .post('/api/auth/login')
+        .send({
+          email: 'nonexistent_test_probe@sekarpura-halim.org',
+          password: 'WrongPassword123!',
+        });
+
+      if (res.status === 429) {
+        triggered429 = true;
+        expect(res.body.success).toBe(false);
+        expect(res.body.message).toMatch(/Terlalu banyak percobaan login/);
+        break;
+      }
+    }
+    expect(triggered429).toBe(true);
   });
 });

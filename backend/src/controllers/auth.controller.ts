@@ -52,6 +52,7 @@ export class AuthController {
       role: user.role,
       candidateId: user.candidateId ? user.candidateId.toString() : undefined,
       name: user.name,
+      mustChangePassword: !!user.mustChangePassword,
     };
 
     const token = jwt.sign(payload, env.JWT_SECRET, {
@@ -77,6 +78,7 @@ export class AuthController {
         role: user.role,
         candidateId: user.candidateId,
         candidate: candidateData,
+        mustChangePassword: !!user.mustChangePassword,
       },
     });
   }
@@ -116,6 +118,7 @@ export class AuthController {
         status: user.status,
         candidateId: user.candidateId,
         candidate,
+        mustChangePassword: !!user.mustChangePassword,
         lastLoginAt: user.lastLoginAt,
       },
     });
@@ -149,6 +152,7 @@ export class AuthController {
     }
 
     user.passwordHash = await bcrypt.hash(newPassword, 10);
+    user.mustChangePassword = false;
     await user.save();
 
     res.status(200).json({

@@ -48,22 +48,36 @@ export class PresentationService {
         });
 
         if (slideFiles.length > 0) {
+          const decodeEntities = (s: string) =>
+            s
+              .replace(/&amp;/g, '&')
+              .replace(/&lt;/g, '<')
+              .replace(/&gt;/g, '>')
+              .replace(/&quot;/g, '"')
+              .replace(/&apos;/g, "'");
+
           for (let i = 0; i < slideFiles.length; i++) {
             const slideXml = await zip.files[slideFiles[i]].async('text');
-            // Extract text nodes inside <a:t>...</a:t>
-            const textMatches = slideXml.match(/<a:t>([^<]+)<\/a:t>/g) || [];
-            const textItems = textMatches.map((t) =>
-              t.replace(/<a:t>/g, '').replace(/<\/a:t>/g, '').trim()
-            ).filter(Boolean);
 
-            const slideTitle = textItems[0] || `Slide ${i + 1}`;
-            const bullets = textItems.slice(1, 10);
+            // Extract paragraphs <a:p>...</a:p> to preserve proper sentences and bullet points
+            const pMatches = slideXml.match(/<a:p[\s>][\s\S]*?<\/a:p>/g) || [];
+            const paragraphs = pMatches
+              .map((p) => {
+                const tMatches = p.match(/<a:t>([^<]+)<\/a:t>/g) || [];
+                return decodeEntities(
+                  tMatches.map((t) => t.replace(/<[^>]+>/g, '')).join('').trim()
+                );
+              })
+              .filter(Boolean);
+
+            const slideTitle = paragraphs[0] || `Slide ${i + 1}`;
+            const bullets = paragraphs.slice(1, 15);
 
             slidesData.push({
               slideNumber: i + 1,
               title: slideTitle,
-              bullets: bullets.length > 0 ? bullets : ['Poin materi presentasi kandidat'],
-              content: textItems.join(' '),
+              bullets: bullets.length > 0 ? bullets : ['Materi paparan slide kandidat'],
+              content: paragraphs.join('\n'),
             });
           }
         } else {
@@ -77,16 +91,42 @@ export class PresentationService {
         await this.generatePdfFromSlides(slidesData, presentation.title, convertedPath);
         convertedPdfKey = `converted/${convertedFilename}`;
       } else if (fileExt === 'pdf') {
-        // For PDF files, generate slide descriptors based on page estimation or default 5-10 slides
+        // For PDF files, preserve original file as web-viewable PDF
         convertedPdfKey = presentation.originalFileKey;
-        // Generate structured slide metadata for viewer
-        slidesData = [
-          { slideNumber: 1, title: 'Halaman Judul & Visi', content: presentation.title },
-          { slideNumber: 2, title: 'Latar Belakang & Aspirasi Pekerja', content: 'Kondisi ketenagakerjaan dan sinergi' },
-          { slideNumber: 3, title: 'Misi & Strategi Utama', content: 'Penguatan advokasi dan kesejahteraan' },
-          { slideNumber: 4, title: 'Program Prioritas 100 Hari', content: 'Langkah cepat konsolidasi' },
-          { slideNumber: 5, title: 'Harapan & Komitmen Organisasi', content: 'SEKARPURA Mandiri, Berintegritas, Solid' },
-        ];
+
+        // Read PDF to accurately detect actual page count and metadata
+        const pdfBuffer = fs.readFileSync(originalPath);
+        const pdfText = pdfBuffer.toString('binary');
+        
+        // Count actual /Type /Page instances in PDF
+        const pageMatches = pdfText.match(/\/Type\s*\/Page[^s]/g);
+        let pageCount = pageMatches ? pageMatches.length : 0;
+        
+        // Fallback: check /Count in Pages dictionary if pageMatches is empty
+        if (pageCount === 0) {
+          const countMatch = pdfText.match(/\/Pages[\s\S]*?\/Count\s+(\d+)/);
+          if (countMatch && countMatch[1]) {
+            pageCount = parseInt(countMatch[1], 10);
+          }
+        }
+        if (pageCount <= 0) pageCount = 1;
+
+        // Check if there is an embedded PDF Title
+        const titleMatch = pdfText.match(/\/Title\s*\(([^)]+)\)/);
+        const detectedTitle = titleMatch ? titleMatch[1].trim() : presentation.title;
+
+        slidesData = [];
+        for (let i = 1; i <= pageCount; i++) {
+          slidesData.push({
+            slideNumber: i,
+            title: i === 1 ? detectedTitle : `Halaman ${i} dari ${pageCount}`,
+            bullets: [
+              `Dokumen Asli: ${presentation.originalFileName}`,
+              `Halaman ${i} dari total ${pageCount} halaman materi presentasi`,
+            ],
+            content: `Halaman ${i} dari ${pageCount} materi presentasi asli: ${presentation.originalFileName}`,
+          });
+        }
       } else {
         // .ppt legacy binary format
         slidesData = this.generateFallbackSlides(presentation.title);
@@ -204,15 +244,16 @@ export class PresentationService {
         // Bullets / Content
         let yPos = 135;
         if (slide.bullets && slide.bullets.length > 0) {
-          doc.fontSize(16).font('Helvetica');
-          slide.bullets.forEach((bullet) => {
+          doc.fontSize(14).font('Helvetica');
+          slide.bullets.slice(0, 9).forEach((bullet) => {
+            if (yPos > 405) return;
             doc.fillColor('#F5C451').text('•', 45, yPos);
-            doc.fillColor('#E2E8F0').text(bullet, 65, yPos, { width: 730 });
-            yPos += 35;
+            doc.fillColor('#E2E8F0').text(bullet, 65, yPos, { width: 730, lineBreak: false });
+            yPos += 30;
           });
         } else if (slide.content) {
-          doc.fillColor('#E2E8F0').fontSize(16).font('Helvetica');
-          doc.text(slide.content, 45, yPos, { width: 750 });
+          doc.fillColor('#E2E8F0').fontSize(14).font('Helvetica');
+          doc.text(slide.content, 45, yPos, { width: 750, height: 270 });
         }
 
         // Footer
