@@ -128,4 +128,55 @@ export class UserController {
       data: { id: user._id, status: user.status },
     });
   }
+
+  /**
+   * Super Admin: Reset kata sandi pengguna ke nilai default
+   * Default password: "SekarpuraIndonesiaHlp2026!"
+   */
+  static async resetPassword(req: AuthRequest, res: Response): Promise<void> {
+    const { id } = req.params;
+    const DEFAULT_RESET_PASSWORD = 'SekarpuraIndonesiaHlp2026!';
+
+    const user = await User.findById(id);
+    if (!user) {
+      res.status(404).json({ success: false, message: 'Pengguna tidak ditemukan.' });
+      return;
+    }
+
+    // Hash kata sandi baru
+    const passwordHash = await bcrypt.hash(DEFAULT_RESET_PASSWORD, 10);
+    user.passwordHash = passwordHash;
+    user.mustChangePassword = true; // Wajibkan ubah password saat login pertama kali
+    await user.save();
+
+    // Catat log audit
+    await AuditService.record({
+      actorId: req.user?.id,
+      actorName: req.user?.name || 'Super Admin',
+      actorRole: req.user?.role || 'SUPER_ADMIN',
+      action: 'USER_PASSWORD_RESET',
+      entityType: 'User',
+      entityId: user._id.toString(),
+      after: {
+        userId: user._id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        mustChangePassword: true,
+      },
+      reason: `Reset kata sandi akun oleh Super Admin ke default (${DEFAULT_RESET_PASSWORD})`,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Kata sandi akun ${user.name} (${user.email}) berhasil di-reset menjadi "${DEFAULT_RESET_PASSWORD}".`,
+      data: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        defaultPassword: DEFAULT_RESET_PASSWORD,
+        mustChangePassword: user.mustChangePassword,
+      },
+    });
+  }
 }

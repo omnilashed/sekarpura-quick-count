@@ -22,6 +22,10 @@ describe('SEKARPURA Election Center - API & Integrity Tests', () => {
   let stageCandidate2Id = '';
   let stage1Id = '';
   let testSourceId = '';
+  const c1Email = 'yulianto@sekarpura-halim.org';
+  const c1Pass = 'Sekarpura2026!#01';
+  const c2Email = 'shinta.mahadewa@sekarpura-halim.org';
+  const c2Pass = 'Sekarpura2026!#02';
 
   beforeAll(async () => {
     if (mongoose.connection.readyState === 0) {
@@ -41,11 +45,6 @@ describe('SEKARPURA Election Center - API & Integrity Tests', () => {
     adminToken = adminRes.body.token;
 
     // 2. Candidate 1 & 2 Login
-    const c1Email = 'yulianto@sekarpura-halim.org';
-    const c1Pass = 'Sekarpura2026!#01';
-    const c2Email = 'shinta.mahadewa@sekarpura-halim.org';
-    const c2Pass = 'Sekarpura2026!#02';
-
     const cand1Res = await request(app)
       .post('/api/auth/login')
       .send({
@@ -319,5 +318,64 @@ describe('SEKARPURA Election Center - API & Integrity Tests', () => {
       }
     }
     expect(triggered429).toBe(true);
+  });
+
+  it('14. Super Admin can reset user password to default SekarpuraIndonesiaHlp2026!', async () => {
+    // Buat user dummy khusus pengujian reset password
+    const bcrypt = await import('bcryptjs');
+    const dummyHash = await bcrypt.default.hash('InitialDummyPass123!', 10);
+    const dummyUser = new User({
+      name: 'Test Reset Target User',
+      email: 'test_reset_target@sekarpura-halim.org',
+      passwordHash: dummyHash,
+      role: 'ADMIN',
+      status: 'ACTIVE',
+    });
+    await dummyUser.save();
+
+    try {
+      const res = await request(app)
+        .post(`/api/users/${dummyUser._id}/reset-password`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.defaultPassword).toBe('SekarpuraIndonesiaHlp2026!');
+      expect(res.body.data.mustChangePassword).toBe(true);
+
+      // Verifikasi hash di database cocok dengan default password baru
+      const updatedUser = await User.findById(dummyUser._id);
+      expect(updatedUser).toBeDefined();
+      expect(updatedUser?.mustChangePassword).toBe(true);
+      const isPasswordValid = await bcrypt.default.compare(
+        'SekarpuraIndonesiaHlp2026!',
+        updatedUser!.passwordHash
+      );
+      expect(isPasswordValid).toBe(true);
+    } finally {
+      await User.findByIdAndDelete(dummyUser._id);
+    }
+  });
+
+  it('15. Security - RBAC: Candidate cannot reset user password (HTTP 403)', async () => {
+    const dummyUser = new User({
+      name: 'Test RBAC Target User',
+      email: 'test_rbac_target@sekarpura-halim.org',
+      passwordHash: 'dummyhash',
+      role: 'ADMIN',
+      status: 'ACTIVE',
+    });
+    await dummyUser.save();
+
+    try {
+      const res = await request(app)
+        .post(`/api/users/${dummyUser._id}/reset-password`)
+        .set('Authorization', `Bearer ${candidate1Token}`);
+
+      expect(res.status).toBe(403);
+      expect(res.body.message).toMatch(/Akses ditolak/);
+    } finally {
+      await User.findByIdAndDelete(dummyUser._id);
+    }
   });
 });

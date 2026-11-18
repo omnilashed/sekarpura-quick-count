@@ -44,4 +44,19 @@ export const settingsService = {
     );
     return res.data;
   },
+
+  async resetPassword(id: string) {
+    const res = await api.post<{
+      success: boolean;
+      message: string;
+      data: {
+        id: string;
+        name: string;
+        email: string;
+        defaultPassword: string;
+        mustChangePassword: boolean;
+      };
+    }>(`/users/${id}/reset-password`);
+    return res.data;
+  },
 };
