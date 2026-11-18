@@ -5,8 +5,6 @@ import { initSocket } from './config/socket.js';
 import { env } from './config/env.js';
 
 const startServer = async () => {
-  await connectDB();
-
   const app = createApp();
   const httpServer = http.createServer(app);
 
@@ -21,6 +19,9 @@ const startServer = async () => {
     console.log(` WS  : ws://localhost:${env.PORT}`);
     console.log(`====================================================`);
   });
+
+  // Koneksi database setelah port aktif (retry otomatis bila gagal)
+  await connectDB();
 };
 
 startServer().catch((err) => {

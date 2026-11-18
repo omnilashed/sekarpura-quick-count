@@ -72,7 +72,14 @@ export const connectDB = async (): Promise<void> => {
       }
     }
 
-    console.error('[Database] MongoDB Connection Error:', error);
-    process.exit(1);
+    // Remote DB (Atlas): jangan matikan server, coba ulang berkala agar /api/health tetap merespons
+    const retryMs = 15000;
+    console.error(
+      `[Database] Gagal konek MongoDB: ${error?.message || error}. ` +
+        `Pastikan IP server di-whitelist pada Atlas > Network Access (0.0.0.0/0). Mencoba ulang dalam ${retryMs / 1000} detik...`
+    );
+    setTimeout(() => {
+      connectDB().catch(() => undefined);
+    }, retryMs);
   }
 };

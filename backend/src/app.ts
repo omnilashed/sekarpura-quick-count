@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import path from 'path';
+import mongoose from 'mongoose';
 import { env } from './config/env.js';
 import routes from './routes/index.js';
 import { errorHandler } from './middlewares/errorHandler.js';
@@ -78,6 +79,7 @@ export const createApp = (): Application => {
       app: 'SEKARPURA Election Center API',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
+      database: mongoose.connection.readyState === 1 ? 'CONNECTED' : 'DISCONNECTED',
     });
   });
 
