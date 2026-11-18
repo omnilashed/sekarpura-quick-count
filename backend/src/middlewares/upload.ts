@@ -40,17 +40,8 @@ export const uploadPhoto = multer({
   },
 });
 
-// Presentation upload storage
-const presentationStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    cb(null, presentationsDir);
-  },
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    cb(null, `pres-${uniqueSuffix}${ext}`);
-  },
-});
+// Presentation upload storage (Memory Storage for direct GridFS streaming & SHA-256 computation)
+const presentationStorage = multer.memoryStorage();
 
 export const uploadPresentation = multer({
   storage: presentationStorage,

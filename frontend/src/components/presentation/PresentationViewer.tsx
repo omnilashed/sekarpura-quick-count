@@ -14,27 +14,35 @@ import {
   Sliders,
   ExternalLink,
   X,
+  ShieldCheck,
+  CheckCircle2,
 } from 'lucide-react';
 import { Presentation, SlideData } from '../../types';
-import { BASE_URL } from '../../services/api';
+import { presentationService } from '../../services/presentationService';
 
 interface PresentationViewerProps {
   presentation: Presentation;
   onClose?: () => void;
 }
 
-export const PresentationViewer: React.FC<PresentationViewerProps> = ({ presentation, onClose }) => {
-  const isPdfOrConverted =
-    presentation.fileType === 'pdf' || Boolean(presentation.convertedFileKey);
+export const PresentationViewer: React.FC<PresentationViewerProps> = ({
+  presentation,
+  onClose,
+}) => {
+  const isDirectPdf = presentation.fileType === 'pdf';
+  const hasConvertedPdf = Boolean(presentation.previewGridFsFileId);
+  const canShowDocument = isDirectPdf || hasConvertedPdf;
+
   const [viewMode, setViewMode] = useState<'document' | 'slides'>(
-    isPdfOrConverted ? 'document' : 'slides'
+    canShowDocument ? 'document' : 'slides'
   );
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [playInterval, setPlayInterval] = useState(5); // seconds
+  const [playInterval, setPlayInterval] = useState(5);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [showThumbnails, setShowThumbnails] = useState(false);
+  const [pdfLoadError, setPdfLoadError] = useState(false);
 
   const viewerContainerRef = useRef<HTMLDivElement>(null);
 
@@ -45,7 +53,9 @@ export const PresentationViewer: React.FC<PresentationViewerProps> = ({ presenta
           {
             slideNumber: 1,
             title: presentation.title,
-            content: presentation.description || 'Pemaparan gagasan dan materi kampanye kandidat.',
+            content:
+              presentation.description ||
+              'Materi paparan resmi visi dan misi calon ketua Serikat Pekerja.',
           },
         ];
 
@@ -115,13 +125,9 @@ export const PresentationViewer: React.FC<PresentationViewerProps> = ({ presenta
   const handleZoomOut = () => setZoomLevel((prev) => Math.max(prev - 0.15, 0.8));
   const handleResetZoom = () => setZoomLevel(1);
 
-  // URLs
-  const pdfKey =
-    presentation.fileType === 'pdf'
-      ? presentation.originalFileKey
-      : presentation.convertedFileKey || presentation.originalFileKey;
-  const pdfUrl = `${BASE_URL}/uploads/${pdfKey}`;
-  const downloadOriginalUrl = `${BASE_URL}/uploads/${presentation.originalFileKey}`;
+  // Streaming URLs from Backend API (GridFS)
+  const downloadOriginalUrl = presentationService.getDownloadUrl(presentation._id);
+  const previewPdfUrl = presentationService.getPreviewUrl(presentation._id);
 
   return (
     <div
@@ -135,22 +141,39 @@ export const PresentationViewer: React.FC<PresentationViewerProps> = ({ presenta
       {/* Top Header Bar */}
       <div className="flex flex-wrap items-center justify-between px-3.5 sm:px-6 py-3 bg-navy-900 border-b border-navy-800 gap-2 select-none">
         <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-electric-600/20 text-electric-400 flex items-center justify-center shrink-0">
-            <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+          <div className="w-8 h-8 rounded-xl bg-electric-600/20 text-electric-400 flex items-center justify-center shrink-0">
+            <FileText className="w-4 h-4" />
           </div>
           <div className="min-w-0">
-            <h3 className="font-extrabold text-xs sm:text-base text-white truncate">
-              {presentation.title}
-            </h3>
-            <p className="text-[10px] sm:text-[11px] text-slate-400 truncate">
-              {presentation.originalFileName} • .{presentation.fileType.toUpperCase()} ({slides.length} Halaman/Slide)
+            <div className="flex items-center gap-2">
+              <h3 className="font-extrabold text-xs sm:text-base text-white truncate">
+                {presentation.title}
+              </h3>
+              {presentation.version && (
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-navy-800 text-gold-400 border border-gold-400/20 shrink-0">
+                  v{presentation.version}
+                </span>
+              )}
+            </div>
+            <p className="text-[10px] sm:text-[11px] text-slate-400 truncate flex items-center gap-1.5 mt-0.5">
+              <span>{presentation.originalFileName}</span>
+              <span>•</span>
+              <span className="uppercase font-bold text-electric-400">.{presentation.fileType}</span>
+              {presentation.sha256 && (
+                <>
+                  <span>•</span>
+                  <span className="font-mono text-slate-500 hidden md:inline">
+                    SHA256: {presentation.sha256.substring(0, 8)}...
+                  </span>
+                </>
+              )}
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-          {/* View Mode Switcher */}
-          {isPdfOrConverted && (
+          {/* Mode Switcher */}
+          {canShowDocument && (
             <div className="flex items-center bg-navy-950 p-1 rounded-xl border border-navy-800">
               <button
                 onClick={() => setViewMode('document')}
@@ -159,7 +182,7 @@ export const PresentationViewer: React.FC<PresentationViewerProps> = ({ presenta
                     ? 'bg-electric-600 text-white shadow-sm'
                     : 'text-slate-400 hover:text-white'
                 }`}
-                title="Tampilkan Dokumen Asli (PDF)"
+                title="Tampilkan Dokumen Asli"
               >
                 <FileText className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Dokumen Asli</span>
@@ -174,17 +197,19 @@ export const PresentationViewer: React.FC<PresentationViewerProps> = ({ presenta
                 title="Tampilkan Ringkasan Slide"
               >
                 <Sliders className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Slide Teks</span>
+                <span className="hidden sm:inline">Ringkasan</span>
               </button>
             </div>
           )}
 
-          {/* Toggle Thumbnails (slides mode only) */}
+          {/* Toggle Thumbnails */}
           {viewMode === 'slides' && (
             <button
               onClick={() => setShowThumbnails(!showThumbnails)}
               className={`p-1.5 sm:p-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors ${
-                showThumbnails ? 'bg-navy-800 text-electric-400' : 'text-slate-400 hover:bg-navy-800'
+                showThumbnails
+                  ? 'bg-navy-800 text-electric-400'
+                  : 'text-slate-400 hover:bg-navy-800'
               }`}
               title="Daftar Slide"
             >
@@ -193,17 +218,15 @@ export const PresentationViewer: React.FC<PresentationViewerProps> = ({ presenta
             </button>
           )}
 
-          {/* Download Original File */}
+          {/* Download Original File Button */}
           <a
             href={downloadOriginalUrl}
-            target="_blank"
-            rel="noopener noreferrer"
             download={presentation.originalFileName}
-            className="p-1.5 sm:p-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 text-slate-300 hover:text-white bg-navy-800 hover:bg-navy-700 transition-colors"
-            title="Unduh File Asli"
+            className="p-1.5 sm:p-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 text-slate-200 hover:text-white bg-navy-800 hover:bg-navy-700 transition-colors"
+            title="Unduh File Asli Terverifikasi"
           >
-            <Download className="w-4 h-4" />
-            <span className="hidden md:inline">Unduh Asli</span>
+            <Download className="w-4 h-4 text-gold-400" />
+            <span className="hidden md:inline">Unduh File Asli</span>
           </a>
 
           {/* Fullscreen Toggle */}
@@ -228,17 +251,19 @@ export const PresentationViewer: React.FC<PresentationViewerProps> = ({ presenta
       </div>
 
       {/* Main Presentation Stage */}
-      {viewMode === 'document' ? (
+      {viewMode === 'document' && canShowDocument && !pdfLoadError ? (
         <div className="flex-1 flex flex-col bg-slate-900 overflow-hidden relative min-h-[500px] sm:min-h-[640px]">
           <object
-            data={`${pdfUrl}#toolbar=1&navpanes=1`}
+            data={`${previewPdfUrl}#toolbar=1&navpanes=1`}
             type="application/pdf"
             className="w-full h-full flex-1 min-h-[500px] sm:min-h-[640px] border-0"
+            onError={() => setPdfLoadError(true)}
           >
             <iframe
-              src={`${pdfUrl}#toolbar=1&navpanes=1`}
+              src={`${previewPdfUrl}#toolbar=1&navpanes=1`}
               className="w-full h-full flex-1 min-h-[500px] sm:min-h-[640px] border-0"
               title={presentation.title}
+              onError={() => setPdfLoadError(true)}
             >
               <div className="p-8 text-center space-y-4">
                 <FileText className="w-12 h-12 text-slate-400 mx-auto" />
@@ -246,7 +271,7 @@ export const PresentationViewer: React.FC<PresentationViewerProps> = ({ presenta
                   Browser Anda tidak mendukung preview PDF langsung.
                 </p>
                 <a
-                  href={pdfUrl}
+                  href={previewPdfUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 px-4 py-2 bg-electric-600 hover:bg-electric-500 text-white rounded-xl text-xs font-bold transition-all"
@@ -258,14 +283,54 @@ export const PresentationViewer: React.FC<PresentationViewerProps> = ({ presenta
             </iframe>
           </object>
         </div>
+      ) : viewMode === 'document' && !canShowDocument ? (
+        /* Presentation Native PPT/PPTX Card when no PDF converted artifact is present */
+        <div className="flex-1 flex flex-col items-center justify-center p-6 sm:p-12 text-center bg-gradient-to-b from-navy-950 to-navy-900 space-y-5">
+          <div className="w-16 h-16 rounded-3xl bg-gold-500/15 text-gold-400 flex items-center justify-center shadow-lg border border-gold-500/20">
+            <FileText className="w-8 h-8" />
+          </div>
+          <div className="max-w-md space-y-2">
+            <h3 className="text-lg sm:text-xl font-extrabold text-white">
+              File Presentasi Resmi .{presentation.fileType.toUpperCase()}
+            </h3>
+            <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+              File PowerPoint <strong>{presentation.originalFileName}</strong> tersimpan 100% utuh di penyimpanan aman GridFS dengan seluruh format, grafik, tabel, dan animasi asli Anda.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+            <a
+              href={downloadOriginalUrl}
+              download={presentation.originalFileName}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-electric-600 hover:bg-electric-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-electric-500/25 transition-all"
+            >
+              <Download className="w-4 h-4" />
+              <span>Unduh File Asli ({presentation.originalFileName})</span>
+            </a>
+
+            <button
+              onClick={() => setViewMode('slides')}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-navy-800 hover:bg-navy-700 text-slate-300 font-semibold text-xs transition-colors"
+            >
+              <Sliders className="w-4 h-4" />
+              <span>Lihat Ringkasan Teks Slide</span>
+            </button>
+          </div>
+
+          <div className="pt-4 flex items-center gap-2 text-[11px] text-slate-500">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Terverifikasi SHA-256: {presentation.sha256}</span>
+          </div>
+        </div>
       ) : (
+        /* Slides Outline Canvas */
         <div className="flex-1 flex overflow-hidden relative">
           {/* Thumbnails Sidebar */}
           {showThumbnails && (
-            <div className="absolute inset-y-0 left-0 z-30 w-52 sm:w-60 bg-navy-950/98 backdrop-blur-md border-r border-navy-800 p-3 overflow-y-auto space-y-2 select-none shadow-2xl animate-in slide-in-from-left duration-200">
+            <div className="absolute inset-y-0 left-0 z-30 w-56 sm:w-64 bg-navy-950/98 backdrop-blur-md border-r border-navy-800 p-3 overflow-y-auto space-y-2 select-none shadow-2xl animate-in slide-in-from-left duration-200">
               <div className="flex items-center justify-between pb-2 border-b border-navy-800">
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                  Navigasi Slide
+                  Daftar Slide
                 </p>
                 <button
                   onClick={() => setShowThumbnails(false)}
@@ -302,51 +367,52 @@ export const PresentationViewer: React.FC<PresentationViewerProps> = ({ presenta
           {/* Slide Stage Canvas */}
           <div className="flex-1 flex items-center justify-center p-3 sm:p-6 overflow-auto bg-gradient-to-b from-navy-950 to-navy-900">
             <div
-              className="w-full max-w-4xl aspect-[16/9] min-h-[240px] bg-[#0B1630] rounded-xl sm:rounded-2xl border border-navy-700 shadow-2xl flex flex-col justify-between p-4 sm:p-8 transition-transform duration-200 relative overflow-hidden"
+              className="w-full max-w-4xl aspect-[16/9] min-h-[260px] bg-navy-900/90 rounded-2xl border border-navy-800 shadow-2xl flex flex-col justify-between p-5 sm:p-8 transition-transform duration-200 relative overflow-hidden"
               style={{ transform: `scale(${zoomLevel})` }}
             >
               <div>
-                <div className="absolute top-0 left-0 right-0 h-1.5 sm:h-2 bg-gradient-to-r from-gold-500 via-electric-500 to-gold-400" />
-                <div className="flex items-center justify-between text-[10px] sm:text-xs text-gold-400 font-bold tracking-wider uppercase mb-2 sm:mb-4 pt-1">
-                  <span className="truncate max-w-[170px] sm:max-w-none">SEKARPURA HALIM</span>
+                <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-electric-500 via-gold-500 to-electric-400" />
+                <div className="flex items-center justify-between text-[10px] sm:text-xs text-gold-400 font-bold tracking-wider uppercase mb-3 pt-1">
+                  <span className="truncate max-w-[200px]">SEKARPURA HALIM</span>
                   <span>
                     SLIDE {currentSlide.slideNumber || currentSlideIndex + 1} / {slides.length}
                   </span>
                 </div>
 
                 {/* Slide Title */}
-                <h2 className="text-base 2xs:text-lg sm:text-2xl md:text-3xl font-extrabold text-white leading-tight mb-2 sm:mb-4 line-clamp-2">
-                  {currentSlide.title || `Slide ${currentSlide.slideNumber || currentSlideIndex + 1}`}
+                <h2 className="text-base sm:text-2xl font-extrabold text-white leading-tight mb-3 line-clamp-2">
+                  {currentSlide.title ||
+                    `Slide ${currentSlide.slideNumber || currentSlideIndex + 1}`}
                 </h2>
 
-                <div className="h-0.5 w-full bg-navy-800 mb-3 sm:mb-5" />
+                <div className="h-0.5 w-full bg-navy-800 mb-4" />
 
                 {/* Slide Bullets / Content */}
                 {currentSlide.bullets && currentSlide.bullets.length > 0 ? (
-                  <ul className="space-y-2 sm:space-y-3.5">
+                  <ul className="space-y-2 sm:space-y-3">
                     {currentSlide.bullets.map((bullet, bIdx) => (
                       <li
                         key={bIdx}
-                        className="flex items-start gap-2 sm:gap-3 text-xs sm:text-base text-slate-200 leading-relaxed"
+                        className="flex items-start gap-2.5 text-xs sm:text-sm text-slate-200 leading-relaxed"
                       >
-                        <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-gold-400 mt-1.5 shrink-0" />
-                        <span className="line-clamp-3 sm:line-clamp-none">{bullet}</span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-gold-400 mt-2 shrink-0" />
+                        <span className="line-clamp-3">{bullet}</span>
                       </li>
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-xs sm:text-base text-slate-300 leading-relaxed whitespace-pre-line line-clamp-6 sm:line-clamp-none">
+                  <p className="text-xs sm:text-sm text-slate-300 leading-relaxed whitespace-pre-line line-clamp-6">
                     {currentSlide.content}
                   </p>
                 )}
               </div>
 
               {/* Slide Footer */}
-              <div className="mt-4 sm:mt-6 pt-2 sm:pt-4 border-t border-navy-800 flex items-center justify-between text-[9px] sm:text-xs text-slate-500">
-                <span className="truncate max-w-[200px] sm:max-w-none">
+              <div className="mt-4 pt-3 border-t border-navy-800 flex items-center justify-between text-[10px] sm:text-xs text-slate-500">
+                <span className="truncate max-w-[240px]">
                   {presentation.title} • {presentation.originalFileName}
                 </span>
-                <span className="font-semibold text-slate-400 shrink-0">Official Deck</span>
+                <span className="font-semibold text-slate-400 shrink-0">Ringkasan Materi</span>
               </div>
             </div>
           </div>
@@ -429,18 +495,22 @@ export const PresentationViewer: React.FC<PresentationViewerProps> = ({ presenta
       ) : (
         <div className="px-3 sm:px-6 py-2.5 bg-navy-900 border-t border-navy-800 flex items-center justify-between text-xs text-slate-400 select-none">
           <div className="flex items-center gap-2 truncate">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
-            <span className="truncate">Mode Dokumen Asli Aktif • Mendukung scroll, zoom, & cetak langsung</span>
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span className="truncate">
+              Pratinjau Dokumen Asli Aktif • Mengalir langsung dari penyimpanan aman GridFS
+            </span>
           </div>
-          <a
-            href={pdfUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1 text-electric-400 hover:text-electric-300 font-bold shrink-0 ml-2"
-          >
-            <span>Buka Tab Penuh</span>
-            <ExternalLink className="w-3.5 h-3.5" />
-          </a>
+          {canShowDocument && (
+            <a
+              href={previewPdfUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-electric-400 hover:text-electric-300 font-bold shrink-0 ml-2"
+            >
+              <span>Buka Tab Baru</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          )}
         </div>
       )}
     </div>

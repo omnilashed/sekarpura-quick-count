@@ -1,5 +1,20 @@
-import api from './api';
+import api, { API_URL } from './api';
 import { Presentation } from '../types';
+
+export interface ChecksumVerificationResponse {
+  success: boolean;
+  data: {
+    presentationId: string;
+    fileName: string;
+    fileSize: number;
+    gridFsBytes: number;
+    storedSha256: string;
+    computedSha256: string;
+    isIntegrityValid: boolean;
+    version: number;
+    uploadedAt: string;
+  };
+}
 
 export const presentationService = {
   async getLibrary(stage?: string) {
@@ -22,7 +37,13 @@ export const presentationService = {
     return res.data.data;
   },
 
-  async upload(file: File, candidateId?: string, title?: string, description?: string) {
+  async upload(
+    file: File,
+    candidateId?: string,
+    title?: string,
+    description?: string,
+    onUploadProgress?: (progressEvent: any) => void
+  ) {
     const formData = new FormData();
     formData.append('file', file);
     if (candidateId) formData.append('candidateId', candidateId);
@@ -32,7 +53,25 @@ export const presentationService = {
     const res = await api.post<{ success: boolean; message: string; data: Presentation }>(
       '/presentations/upload',
       formData,
-      { headers: { 'Content-Type': 'multipart/form-data' } }
+      {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress,
+      }
+    );
+    return res.data;
+  },
+
+  getDownloadUrl(presentationId: string): string {
+    return `${API_URL}/presentations/${presentationId}/download`;
+  },
+
+  getPreviewUrl(presentationId: string): string {
+    return `${API_URL}/presentations/${presentationId}/preview`;
+  },
+
+  async verifyChecksum(presentationId: string): Promise<ChecksumVerificationResponse> {
+    const res = await api.get<ChecksumVerificationResponse>(
+      `/presentations/${presentationId}/verify`
     );
     return res.data;
   },

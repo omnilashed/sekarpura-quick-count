@@ -41,17 +41,10 @@ describe('SEKARPURA Election Center - API & Integrity Tests', () => {
     adminToken = adminRes.body.token;
 
     // 2. Candidate 1 & 2 Login
-    const candUsers = await User.find({ role: 'CANDIDATE' }).limit(2);
-    let c1Email = 'kandidat1@sekarpura-halim.org';
-    let c1Pass = 'Kandidat2026!';
-    let c2Email = 'kandidat2@sekarpura-halim.org';
-    let c2Pass = 'Kandidat2026!';
-    if (candUsers.length >= 2) {
-      c1Email = candUsers[0].email;
-      c2Email = candUsers[1].email;
-      c1Pass = c1Email.includes('yulianto') ? 'Sekarpura2026!#01' : 'Kandidat2026!';
-      c2Pass = c2Email.includes('shinta') ? 'Sekarpura2026!#02' : 'Kandidat2026!';
-    }
+    const c1Email = 'yulianto@sekarpura-halim.org';
+    const c1Pass = 'Sekarpura2026!#01';
+    const c2Email = 'shinta.mahadewa@sekarpura-halim.org';
+    const c2Pass = 'Sekarpura2026!#02';
 
     const cand1Res = await request(app)
       .post('/api/auth/login')

@@ -12,7 +12,8 @@
     "clean": "tsx src/seeds/clean.ts",
     "import:real": "tsx src/seeds/inputRealCandidates.ts",
     "test": "vitest run",
-    "migrate:atlas": "tsx src/seeds/migrateToAtlas.ts"
+    "migrate:atlas": "tsx src/seeds/migrateToAtlas.ts",
+    "migrate:gridfs": "tsx src/seeds/migratePresentationsToGridFS.ts"
   },
   "keywords": [
     "sekarpura",

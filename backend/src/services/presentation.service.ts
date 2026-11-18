@@ -1,271 +1,262 @@
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import JSZip from 'jszip';
-import PDFDocument from 'pdfkit';
 import { Presentation, IPresentation, ISlideData } from '../models/Presentation.js';
-import { env } from '../config/env.js';
+import { GridFSService } from './gridfs.service.js';
+
+const execFileAsync = promisify(execFile);
+
+/**
+ * Validasi magic bytes untuk memastikan tipe file sebenarnya sesuai format biner
+ */
+export function validateMagicBytes(
+  buffer: Buffer
+): { ext: 'pdf' | 'ppt' | 'pptx'; mime: string } | null {
+  if (!buffer || buffer.length < 4) return null;
+
+  // PDF: %PDF- (0x25 0x50 0x44 0x46)
+  if (buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46) {
+    return { ext: 'pdf', mime: 'application/pdf' };
+  }
+
+  // PPTX: ZIP PK\x03\x04 (0x50 0x4B 0x03 0x04)
+  if (buffer[0] === 0x50 && buffer[1] === 0x4B && buffer[2] === 0x03 && buffer[3] === 0x04) {
+    return {
+      ext: 'pptx',
+      mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    };
+  }
+
+  // PPT (Legacy MS Compound OLE): 0xD0 0xCF 0x11 0xE0
+  if (buffer[0] === 0xd0 && buffer[1] === 0xcf && buffer[2] === 0x11 && buffer[3] === 0xe0) {
+    return { ext: 'ppt', mime: 'application/vnd.ms-powerpoint' };
+  }
+
+  return null;
+}
 
 export class PresentationService {
   /**
-   * Process presentation file (.pdf, .pptx, .ppt)
-   * Converts to web-viewable representation and extracts slides
+   * Menemukan path binary LibreOffice (soffice) di sistem jika terpasang
+   */
+  static findLibreOfficePath(): string | null {
+    const candidates = [
+      'soffice',
+      'libreoffice',
+      '/usr/bin/soffice',
+      '/usr/bin/libreoffice',
+      'C:\\Program Files\\LibreOffice\\program\\soffice.exe',
+      'C:\\Program Files (x86)\\LibreOffice\\program\\soffice.exe',
+    ];
+
+    for (const bin of candidates) {
+      if (path.isAbsolute(bin)) {
+        if (fs.existsSync(bin)) return bin;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Memproses presentasi secara non-destruktif:
+   * - Menjaga file asli di GridFS 100% tanpa ubahan apa pun
+   * - Untuk PDF: preview langsung merujuk ke file asli
+   * - Untuk PPTX/PPT: jika LibreOffice tersedia, hasilkan preview PDF sebagai artefak terpisah
+   * - Ekstraksi teks & ringkasan slide secara non-destruktif untuk keperluan metadata
    */
   static async processPresentation(presentationId: string): Promise<IPresentation> {
     const presentation = await Presentation.findById(presentationId);
     if (!presentation) {
-      throw new Error('Data presentasi tidak ditemukan.');
+      throw new Error(`Data presentasi tidak ditemukan: ${presentationId}`);
     }
 
     presentation.conversionStatus = 'PROCESSING';
     await presentation.save();
 
     try {
-      const originalPath = path.resolve(env.UPLOAD_DIR, presentation.originalFileKey);
-      if (!fs.existsSync(originalPath)) {
-        throw new Error(`File asli tidak ditemukan di path: ${originalPath}`);
-      }
-
+      // 1. Ambil buffer file asli dari GridFS
+      const originalBuffer = await GridFSService.getFileBuffer(presentation.gridFsFileId);
       const fileExt = presentation.fileType.toLowerCase();
+
       let slidesData: ISlideData[] = [];
-      let convertedPdfKey = presentation.originalFileKey;
-      const thumbnailKeys: string[] = [];
+      let slideCount = 0;
 
-      if (fileExt === 'pptx') {
-        // Read PPTX contents via JSZip
-        const fileBuffer = fs.readFileSync(originalPath);
-        const zip = await JSZip.loadAsync(fileBuffer);
+      if (fileExt === 'pdf') {
+        // Dokumen PDF asli adalah preview terbaik (100% presisi native tanpa konversi)
+        presentation.previewGridFsFileId = presentation.gridFsFileId;
 
-        // Find all slide XML files in ppt/slides/
-        const slideFiles = Object.keys(zip.files).filter((f) =>
-          /^ppt\/slides\/slide\d+\.xml$/i.test(f)
-        );
+        // Hitung perkiraan jumlah halaman PDF secara non-destruktif
+        const pdfText = originalBuffer.toString('binary');
+        const pageMatches = pdfText.match(/\/Type\s*\/Page[^s]/g);
+        slideCount = pageMatches ? pageMatches.length : 1;
 
-        // Sort slide files numerically
-        slideFiles.sort((a, b) => {
-          const numA = parseInt(a.match(/slide(\d+)\.xml/)?.[1] || '0', 10);
-          const numB = parseInt(b.match(/slide(\d+)\.xml/)?.[1] || '0', 10);
-          return numA - numB;
-        });
+        if (slideCount <= 0) {
+          const countMatch = pdfText.match(/\/Pages[\s\S]*?\/Count\s+(\d+)/);
+          if (countMatch && countMatch[1]) {
+            slideCount = parseInt(countMatch[1], 10);
+          }
+        }
+        if (slideCount <= 0) slideCount = 1;
 
-        if (slideFiles.length > 0) {
-          const decodeEntities = (s: string) =>
-            s
-              .replace(/&amp;/g, '&')
-              .replace(/&lt;/g, '<')
-              .replace(/&gt;/g, '>')
-              .replace(/&quot;/g, '"')
-              .replace(/&apos;/g, "'");
+        for (let i = 1; i <= Math.min(slideCount, 100); i++) {
+          slidesData.push({
+            slideNumber: i,
+            title: `Halaman ${i} dari ${slideCount}`,
+            bullets: [`Materi presentasi resmi calon ketua`],
+          });
+        }
+
+        presentation.conversionStatus = 'COMPLETED';
+      } else if (fileExt === 'pptx') {
+        // Non-destructive outline extraction dari XML ppt/slides/
+        try {
+          const zip = await JSZip.loadAsync(originalBuffer);
+          const slideFiles = Object.keys(zip.files).filter((f) =>
+            /^ppt\/slides\/slide\d+\.xml$/i.test(f)
+          );
+
+          slideFiles.sort((a, b) => {
+            const numA = parseInt(a.match(/slide(\d+)\.xml/)?.[1] || '0', 10);
+            const numB = parseInt(b.match(/slide(\d+)\.xml/)?.[1] || '0', 10);
+            return numA - numB;
+          });
+
+          slideCount = slideFiles.length;
 
           for (let i = 0; i < slideFiles.length; i++) {
             const slideXml = await zip.files[slideFiles[i]].async('text');
-
-            // Extract paragraphs <a:p>...</a:p> to preserve proper sentences and bullet points
             const pMatches = slideXml.match(/<a:p[\s>][\s\S]*?<\/a:p>/g) || [];
             const paragraphs = pMatches
               .map((p) => {
                 const tMatches = p.match(/<a:t>([^<]+)<\/a:t>/g) || [];
-                return decodeEntities(
-                  tMatches.map((t) => t.replace(/<[^>]+>/g, '')).join('').trim()
-                );
+                return tMatches
+                  .map((t) => t.replace(/<[^>]+>/g, ''))
+                  .join('')
+                  .trim();
               })
               .filter(Boolean);
 
             const slideTitle = paragraphs[0] || `Slide ${i + 1}`;
-            const bullets = paragraphs.slice(1, 15);
+            const bullets = paragraphs.slice(1, 10);
 
             slidesData.push({
               slideNumber: i + 1,
               title: slideTitle,
               bullets: bullets.length > 0 ? bullets : ['Materi paparan slide kandidat'],
-              content: paragraphs.join('\n'),
             });
           }
+        } catch (zipErr) {
+          console.warn('[PresentationService] PPTX XML outline warning:', zipErr);
+        }
+
+        // Coba konversi via LibreOffice headless jika tersedia di server
+        const previewPdfId = await this.tryConvertWithLibreOffice(
+          originalBuffer,
+          presentation.originalFileName,
+          presentation._id.toString()
+        );
+
+        if (previewPdfId) {
+          presentation.previewGridFsFileId = previewPdfId;
+          presentation.conversionStatus = 'COMPLETED';
         } else {
-          // Fallback slides if xml structure differs
-          slidesData = this.generateFallbackSlides(presentation.title);
-        }
-
-        // Generate converted web-friendly PDF representation using PDFKit
-        const convertedFilename = `converted-${presentation._id}.pdf`;
-        const convertedPath = path.join(env.UPLOAD_DIR, 'converted', convertedFilename);
-        await this.generatePdfFromSlides(slidesData, presentation.title, convertedPath);
-        convertedPdfKey = `converted/${convertedFilename}`;
-      } else if (fileExt === 'pdf') {
-        // For PDF files, preserve original file as web-viewable PDF
-        convertedPdfKey = presentation.originalFileKey;
-
-        // Read PDF to accurately detect actual page count and metadata
-        const pdfBuffer = fs.readFileSync(originalPath);
-        const pdfText = pdfBuffer.toString('binary');
-        
-        // Count actual /Type /Page instances in PDF
-        const pageMatches = pdfText.match(/\/Type\s*\/Page[^s]/g);
-        let pageCount = pageMatches ? pageMatches.length : 0;
-        
-        // Fallback: check /Count in Pages dictionary if pageMatches is empty
-        if (pageCount === 0) {
-          const countMatch = pdfText.match(/\/Pages[\s\S]*?\/Count\s+(\d+)/);
-          if (countMatch && countMatch[1]) {
-            pageCount = parseInt(countMatch[1], 10);
-          }
-        }
-        if (pageCount <= 0) pageCount = 1;
-
-        // Check if there is an embedded PDF Title
-        const titleMatch = pdfText.match(/\/Title\s*\(([^)]+)\)/);
-        const detectedTitle = titleMatch ? titleMatch[1].trim() : presentation.title;
-
-        slidesData = [];
-        for (let i = 1; i <= pageCount; i++) {
-          slidesData.push({
-            slideNumber: i,
-            title: i === 1 ? detectedTitle : `Halaman ${i} dari ${pageCount}`,
-            bullets: [
-              `Dokumen Asli: ${presentation.originalFileName}`,
-              `Halaman ${i} dari total ${pageCount} halaman materi presentasi`,
-            ],
-            content: `Halaman ${i} dari ${pageCount} materi presentasi asli: ${presentation.originalFileName}`,
-          });
+          // LibreOffice tidak terpasang di host: simpan status READY untuk download langsung
+          presentation.conversionStatus = 'READY';
         }
       } else {
-        // .ppt legacy binary format
-        slidesData = this.generateFallbackSlides(presentation.title);
-        const convertedFilename = `converted-${presentation._id}.pdf`;
-        const convertedPath = path.join(env.UPLOAD_DIR, 'converted', convertedFilename);
-        await this.generatePdfFromSlides(slidesData, presentation.title, convertedPath);
-        convertedPdfKey = `converted/${convertedFilename}`;
+        // Format legacy .ppt
+        slideCount = 1;
+        const previewPdfId = await this.tryConvertWithLibreOffice(
+          originalBuffer,
+          presentation.originalFileName,
+          presentation._id.toString()
+        );
+        if (previewPdfId) {
+          presentation.previewGridFsFileId = previewPdfId;
+          presentation.conversionStatus = 'COMPLETED';
+        } else {
+          presentation.conversionStatus = 'READY';
+        }
       }
 
-      presentation.slideCount = slidesData.length;
+      presentation.slideCount = slideCount || 1;
       presentation.slidesData = slidesData;
-      presentation.convertedFileKey = convertedPdfKey;
-      presentation.thumbnailKeys = thumbnailKeys;
-      presentation.conversionStatus = 'COMPLETED';
       presentation.conversionError = undefined;
       await presentation.save();
 
       return presentation;
     } catch (error: any) {
-      console.error('[PresentationService] Conversion failed:', error);
+      console.error('[PresentationService] Processing error:', error);
       presentation.conversionStatus = 'FAILED';
-      presentation.conversionError = error.message || 'Gagal memproses file presentasi.';
+      presentation.conversionError = error.message || 'Gagal memproses file materi presentasi.';
       await presentation.save();
       throw error;
     }
   }
 
-  private static generateFallbackSlides(title: string): ISlideData[] {
-    return [
-      {
-        slideNumber: 1,
-        title: title || 'Pemaparan Visi & Misi Calon Ketua',
-        bullets: [
-          'Serikat Pekerja Angkasa Pura Indonesia (SEKARPURA)',
-          'Cabang Bandara Halim Perdanakusuma',
-          'Tahun Pemilihan 2026',
-        ],
-      },
-      {
-        slideNumber: 2,
-        title: 'Visi Pembangunan Serikat Pekerja',
-        bullets: [
-          'Mewujudkan SEKARPURA Halim yang mandiri, berintegritas, dan solutif',
-          'Perlindungan hak pekerja bandara secara berkesinambungan',
-          'Sinergi produktif antara manajemen dan serikat',
-        ],
-      },
-      {
-        slideNumber: 3,
-        title: 'Misi & Pokok Kebijakan',
-        bullets: [
-          'Peningkatan advokasi ketenagakerjaan yang tanggap dan adil',
-          'Transparansi pengelolaan dana iuran anggota',
-          'Peningkatan kapasitas dan kompetensi pekerja',
-        ],
-      },
-      {
-        slideNumber: 4,
-        title: 'Program Kerja Unggulan',
-        bullets: [
-          'Digitalisasi Layanan Aspirasi Anggota',
-          'Klinik Advokasi & Konsultasi Hukum PKB',
-          'Program Kesejahteraan & Dana Sosial Pekerja',
-          'Dialog Berkala Bersama Manajemen Operasi',
-        ],
-      },
-      {
-        slideNumber: 5,
-        title: 'Komitmen Kepemimpinan & Harapan',
-        bullets: [
-          'Menjunjung tinggi transparansi, akuntabilitas, dan loyalitas pada anggota',
-          'Membangun Halim Perdanakusuma yang solid dan bermartabat',
-          'Bersama Melangkah, Kuat Bersatu!',
-        ],
-      },
-    ];
-  }
+  /**
+   * Menjalankan konversi headless LibreOffice jika tersedia di server.
+   * File hasil konversi diunggah sebagai previewGridFsFileId TERPISAH dan TIDAK PERNAH menimpa file asli.
+   */
+  private static async tryConvertWithLibreOffice(
+    inputBuffer: Buffer,
+    originalFileName: string,
+    presentationId: string
+  ): Promise<any | null> {
+    const sofficeBin = this.findLibreOfficePath();
+    if (!sofficeBin) {
+      console.log(
+        '[PresentationService] LibreOffice headless tidak ditemukan di server. Preview PDF artefak dilewati, file asli tetap utuh di GridFS.'
+      );
+      return null;
+    }
 
-  private static async generatePdfFromSlides(
-    slides: ISlideData[],
-    title: string,
-    outputPath: string
-  ): Promise<void> {
-    return new Promise((resolve, reject) => {
-      // 16:9 presentation slide size (841.89 x 472.27 pt)
-      const doc = new PDFDocument({
-        size: [842, 472],
-        margin: 40,
-        autoFirstPage: false,
-      });
+    const tmpDir = path.join(os.tmpdir(), `soffice-${presentationId}-${Date.now()}`);
+    fs.mkdirSync(tmpDir, { recursive: true });
 
-      const writeStream = fs.createWriteStream(outputPath);
-      doc.pipe(writeStream);
+    const safeBase = originalFileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const inputFilePath = path.join(tmpDir, safeBase);
+    fs.writeFileSync(inputFilePath, inputBuffer);
 
-      slides.forEach((slide) => {
-        doc.addPage();
+    try {
+      console.log(`[PresentationService] Menjalankan konversi LibreOffice headless: ${inputFilePath}`);
+      await execFileAsync(sofficeBin, [
+        '--headless',
+        '--convert-to',
+        'pdf',
+        '--outdir',
+        tmpDir,
+        inputFilePath,
+      ]);
 
-        // Background Slide
-        doc.rect(0, 0, 842, 472).fill('#0B1630');
+      const baseNameWithoutExt = path.parse(safeBase).name;
+      const expectedPdfPath = path.join(tmpDir, `${baseNameWithoutExt}.pdf`);
 
-        // Top Accent Bar
-        doc.rect(0, 0, 842, 8).fill('#F5C451');
+      if (fs.existsSync(expectedPdfPath)) {
+        const pdfBuffer = fs.readFileSync(expectedPdfPath);
+        const previewResult = await GridFSService.uploadBuffer(
+          `preview-${presentationId}.pdf`,
+          pdfBuffer,
+          'application/pdf',
+          { isPreview: true, presentationId }
+        );
+        console.log(`[PresentationService] Preview PDF tersimpan di GridFS: ${previewResult.fileId}`);
+        return previewResult.fileId;
+      }
+    } catch (err: any) {
+      console.warn('[PresentationService] LibreOffice execution warning:', err.message);
+    } finally {
+      // Bersihkan file sementara
+      try {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      } catch {
+        // ignore cleanup error
+      }
+    }
 
-        // Header SEKARPURA Halim
-        doc.fillColor('#F5C451').fontSize(12).font('Helvetica-Bold');
-        doc.text('SEKARPURA ELECTION CENTER | HALIM PERDANAKUSUMA', 40, 25);
-
-        // Slide Title
-        doc.fillColor('#FFFFFF').fontSize(26).font('Helvetica-Bold');
-        doc.text(slide.title || `Slide ${slide.slideNumber}`, 40, 60, { width: 760 });
-
-        // Divider
-        doc.rect(40, 105, 762, 2).fill('#1E3E6E');
-
-        // Bullets / Content
-        let yPos = 135;
-        if (slide.bullets && slide.bullets.length > 0) {
-          doc.fontSize(14).font('Helvetica');
-          slide.bullets.slice(0, 9).forEach((bullet) => {
-            if (yPos > 405) return;
-            doc.fillColor('#F5C451').text('•', 45, yPos);
-            doc.fillColor('#E2E8F0').text(bullet, 65, yPos, { width: 730, lineBreak: false });
-            yPos += 30;
-          });
-        } else if (slide.content) {
-          doc.fillColor('#E2E8F0').fontSize(14).font('Helvetica');
-          doc.text(slide.content, 45, yPos, { width: 750, height: 270 });
-        }
-
-        // Footer
-        doc.rect(0, 445, 842, 27).fill('#142C52');
-        doc.fillColor('#94A3B8').fontSize(10).font('Helvetica');
-        doc.text('Materi Presentasi Calon Ketua SEKARPURA 2026', 40, 453);
-        doc.text(`Slide ${slide.slideNumber} dari ${slides.length}`, 720, 453, { align: 'right' });
-      });
-
-      doc.end();
-      writeStream.on('finish', () => resolve());
-      writeStream.on('error', (err) => reject(err));
-    });
+    return null;
   }
 }

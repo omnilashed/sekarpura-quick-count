@@ -7,9 +7,12 @@ import { uploadRateLimiter } from '../middlewares/rateLimiter.js';
 
 const router = Router();
 
-// Public read
+// Public read & download & preview routes
 router.get('/library', PresentationController.getAllPublished);
 router.get('/candidate/:candidateId', PresentationController.getByCandidate);
+router.get('/:id/download', PresentationController.download);
+router.get('/:id/preview', PresentationController.preview);
+router.get('/:id/verify', PresentationController.verifyChecksum);
 router.get('/:id', PresentationController.getById);
 
 // Upload (Candidate or Admin)
@@ -29,7 +32,7 @@ router.patch(
   PresentationController.updateStatus
 );
 
-// Delete
+// Delete (Candidate owner or Admin)
 router.delete('/:id', authenticate, PresentationController.deletePresentation);
 
 export default router;
