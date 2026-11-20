@@ -25,3 +25,40 @@
 ::-webkit-scrollbar-thumb:hover {
   @apply bg-slate-400 dark:bg-navy-700;
 }
+
+/* Print Styles with Official Indonesian / Jakarta Timezone (WIB UTC+7) */
+@media print {
+  nav,
+  aside,
+  header,
+  button,
+  .no-print,
+  .print-hidden {
+    display: none !important;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    font-size: 11pt !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  .shadow-sm,
+  .shadow-md,
+  .shadow-lg,
+  .shadow-xl {
+    box-shadow: none !important;
+  }
+
+  .border {
+    border-color: #cbd5e1 !important;
+  }
+}
+
+.print-only {
+  display: none;
+}

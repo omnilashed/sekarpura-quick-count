@@ -2,6 +2,8 @@ import React, { useEffect, useState, useRef } from 'react';
 import {
   History,
   Download,
+  Printer,
+  Clock,
   CheckCircle2,
   AlertCircle,
   Zap,
@@ -18,6 +20,7 @@ import { quickcountService } from '../../services/quickcountService';
 import { electionService } from '../../services/electionService';
 import { candidateService } from '../../services/candidateService';
 import { VoteSource, Candidate, ElectionStage, QuickCountData } from '../../types';
+import { formatWibDateTime, formatWibDate } from '../../utils/date';
 
 export const AdminQuickCountPage: React.FC = () => {
   const [stages, setStages] = useState<ElectionStage[]>([]);
@@ -656,6 +659,25 @@ export const AdminQuickCountPage: React.FC = () => {
 
   return (
     <div className="space-y-6 sm:space-y-8">
+      {/* Print-Only Official Header */}
+      <div className="print-only mb-6 border-b-2 border-slate-900 pb-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-lg font-black tracking-wider text-slate-900">
+              SEKARPURA CABANG BANDARA HALIM PERDANAKUSUMA
+            </h1>
+            <p className="text-xs text-slate-700">
+              Laporan Rekapitulasi Resmi & Hasil Perhitungan Suara Pemilihan Calon Ketua
+            </p>
+          </div>
+          <div className="text-right text-[11px] text-slate-600">
+            <p className="font-bold">{currentStage?.name || 'Tahap Pemilihan'}</p>
+            <p>Waktu Cetak: {formatWibDateTime()}</p>
+            <p className="text-[10px] text-slate-500">Zona Waktu: Asia/Jakarta (WIB / UTC+7)</p>
+          </div>
+        </div>
+      </div>
+
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
@@ -1295,14 +1317,20 @@ export const AdminQuickCountPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="px-3 py-2 bg-slate-50 dark:bg-navy-950/60 rounded-xl border border-slate-200/80 dark:border-navy-800 text-[11px] text-slate-600 dark:text-slate-300 flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
-              <span>
-                Dokumen mencakup data komprehensif <strong>Putaran 1</strong>, <strong>Putaran 2</strong>, penetapan ketua definitif, matriks TPS, dan tanda tangan saksi/panitia.
-              </span>
+            <div className="px-3 py-2 bg-slate-50 dark:bg-navy-950/60 rounded-xl border border-slate-200/80 dark:border-navy-800 text-[11px] text-slate-600 dark:text-slate-300 flex flex-col gap-1.5">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+                <span>
+                  Dokumen mencakup data komprehensif <strong>Putaran 1</strong>, <strong>Putaran 2</strong>, penetapan ketua definitif, matriks TPS, dan tanda tangan saksi/panitia.
+                </span>
+              </div>
+              <div className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5 pl-4 border-t border-slate-200/60 dark:border-navy-800/80 pt-1">
+                <Clock className="w-3 h-3 text-gold-500 shrink-0" />
+                <span>Zona Waktu Dokumen & Cetak: <strong>WIB (UTC+7, Bagian Jakarta/Indonesia)</strong></span>
+              </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-2 pt-1 sm:pt-2">
+            <div className="grid grid-cols-2 xs:grid-cols-4 gap-2 pt-1 sm:pt-2">
               <button
                 type="button"
                 disabled={exportingFormat !== null}
@@ -1344,6 +1372,15 @@ export const AdminQuickCountPage: React.FC = () => {
                   <Download className="w-3.5 h-3.5" />
                 )}
                 <span>{exportingFormat === 'csv' ? 'Mengunduh...' : 'CSV'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="flex items-center justify-center gap-1.5 p-2.5 sm:p-3 rounded-2xl bg-slate-500/10 hover:bg-slate-500/20 text-slate-700 dark:text-slate-300 font-bold text-xs transition-colors min-h-[42px]"
+                title="Cetak Halaman Rekapitulasi ke Mesin Cetak / Printer (WIB UTC+7)"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Cetak</span>
               </button>
             </div>
           </div>
@@ -1473,7 +1510,7 @@ export const AdminQuickCountPage: React.FC = () => {
                   <div className="flex items-center justify-between font-bold">
                     <span>Revisi #{item.revision}</span>
                     <span className="text-[10px] text-slate-400">
-                      {new Date(item.verifiedAt || item.createdAt).toLocaleString('id-ID')}
+                      {formatWibDateTime(item.verifiedAt || item.createdAt)}
                     </span>
                   </div>
                   <p className="text-slate-500">

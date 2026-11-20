@@ -7,6 +7,11 @@ import { VoteSource } from '../models/VoteSource.js';
 import { VoteSubmission } from '../models/VoteSubmission.js';
 import { Candidate } from '../models/Candidate.js';
 import { Election } from '../models/Election.js';
+import {
+  formatWibDateTime,
+  formatWibDate,
+  formatWibShortDateTime,
+} from '../utils/date.util.js';
 
 export class ReportService {
   /**
@@ -130,7 +135,8 @@ export class ReportService {
     rows.push(`"Cabang:","${election?.branch || 'Halim Perdanakusuma'}"`);
     rows.push(`"Tahap:","${stage.name}"`);
     rows.push(`"Target DPT Surat Suara:","${stage.targetVotes || 24} Suara"`);
-    rows.push(`"Waktu Pembuatan Dokumen:","${new Date().toLocaleString('id-ID')}"`);
+    rows.push(`"Waktu Pembuatan Dokumen:","${formatWibDateTime()}"`);
+    rows.push('"Zona Waktu Acuan:","Waktu Indonesia Barat (WIB / UTC+7, Jakarta)"');
     rows.push('');
 
     // Penetapan Pemenang Definitif (Jika Tahap 2)
@@ -331,7 +337,8 @@ export class ReportService {
     sheet1.addRow(['Tahapan', stage.name]);
     sheet1.addRow(['Status Rekapitulasi', statusLabel]);
     sheet1.addRow(['Target DPT / Surat Suara', `${stage.targetVotes || 24} Suara Pemilih`]);
-    sheet1.addRow(['Waktu Pencetakan Laporan', new Date().toLocaleString('id-ID')]);
+    sheet1.addRow(['Waktu Pencetakan Laporan', formatWibDateTime()]);
+    sheet1.addRow(['Zona Waktu Acuan', 'Waktu Indonesia Barat (WIB / UTC+7, Jakarta)']);
     sheet1.addRow([]);
 
     // Section B: Penetapan Pemenang
@@ -715,7 +722,7 @@ export class ReportService {
             .fontSize(7.5)
             .fillColor('#94A3B8')
             .text(
-              `Dokumen Resmi Rekapitulasi SEKARPURA Cabang Halim Perdanakusuma | Halaman ${i + 1} dari ${range.count}`,
+              `Dokumen Resmi Rekapitulasi SEKARPURA Cabang Halim Perdanakusuma | Dicetak: ${formatWibShortDateTime()} | Halaman ${i + 1} dari ${range.count}`,
               35,
               doc.page.height - 25,
               { align: 'center', width: doc.page.width - 70 }
@@ -740,7 +747,7 @@ export class ReportService {
       );
       doc.fillColor('#94A3B8').fontSize(7.5);
       doc.text(
-        `Status: ${statusLabel} | Tanggal Cetak: ${new Date().toLocaleString('id-ID')} | Target DPT: ${stage.targetVotes || 24} Suara`,
+        `Status: ${statusLabel} | Waktu Cetak: ${formatWibDateTime()} | Target DPT: ${stage.targetVotes || 24} Suara`,
         50,
         76
       );
@@ -1038,16 +1045,7 @@ export class ReportService {
       y += 45;
 
       doc.fillColor('#0F172A').fontSize(8.5).font('Helvetica');
-      doc.text(
-        'Jakarta, ' +
-          new Date().toLocaleDateString('id-ID', {
-            day: 'numeric',
-            month: 'long',
-            year: 'numeric',
-          }),
-        380,
-        y
-      );
+      doc.text(`Jakarta, ${formatWibDate()}`, 380, y);
       doc.text('Panitia Pemilihan SEKARPURA Halim', 380, y + 13);
       doc.font('Helvetica-Bold').text('Ketua Panitia Pemilihan Cabang', 380, y + 26);
       doc.font('Helvetica').text('(_______________________________)', 380, y + 70);

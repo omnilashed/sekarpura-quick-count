@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { ReportService } from '../services/report.service.js';
 import { ElectionStage } from '../models/ElectionStage.js';
 import { Election } from '../models/Election.js';
+import { getWibFilenameTimestamp } from '../utils/date.util.js';
 
 export class ReportController {
   /**
@@ -31,7 +32,7 @@ export class ReportController {
       const isStage2 = stage?.stageType === 'STAGE_2';
       const requestedRound = round ? Number(round) : undefined;
       const stagePrefix = isStage2 ? 'rekap-resmi-putaran1-dan-2' : 'rekap-resmi-penjaringan';
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const timestamp = getWibFilenameTimestamp();
 
       if (format === 'csv') {
         const csvData = await ReportService.generateQuickCountCsv(targetStageId, requestedRound);

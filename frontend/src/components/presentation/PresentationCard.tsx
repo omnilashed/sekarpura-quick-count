@@ -2,6 +2,7 @@ import React from 'react';
 import { Presentation as PresentationType } from '../../types';
 import { Presentation, Layers, Calendar, ArrowRight } from 'lucide-react';
 import { BASE_URL } from '../../services/api';
+import { formatWibDate } from '../../utils/date';
 
 interface PresentationCardProps {
   presentation: PresentationType;
@@ -16,11 +17,7 @@ export const PresentationCard: React.FC<PresentationCardProps> = ({ presentation
       : `${BASE_URL}${candidate.profilePhoto}`
     : '/logo.svg';
 
-  const uploadDate = new Date(presentation.uploadedAt).toLocaleDateString('id-ID', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
+  const uploadDate = formatWibDate(presentation.uploadedAt);
 
   return (
     <div className="bg-white dark:bg-navy-900 border border-slate-200 dark:border-navy-800 rounded-3xl p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">

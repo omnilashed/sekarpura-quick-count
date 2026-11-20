@@ -11,6 +11,7 @@ import {
 } from 'recharts';
 import { QuickCountData } from '../../types';
 import { useThemeStore } from '../../stores/themeStore';
+import { formatWibTime } from '../../utils/date';
 
 interface HistoricalTrendChartProps {
   timeline: QuickCountData['timeline'];
@@ -28,10 +29,7 @@ export const HistoricalTrendChart: React.FC<HistoricalTrendChartProps> = ({ time
   const COLORS = ['#F5C451', '#94A3B8', '#CD7F32', '#3B82F6', '#8B5CF6'];
 
   const chartData = timeline.map((entry) => {
-    const timeStr = new Date(entry.timestamp).toLocaleTimeString('id-ID', {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    const timeStr = formatWibTime(entry.timestamp, false);
 
     const point: any = {
       name: `${entry.sourceCode}\n${timeStr}`,

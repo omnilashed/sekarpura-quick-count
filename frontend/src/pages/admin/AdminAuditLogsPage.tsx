@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ShieldAlert, RefreshCw, Filter, Clock } from 'lucide-react';
 import { settingsService } from '../../services/settingsService';
 import { VoteAuditLog } from '../../types';
+import { formatWibDateTime } from '../../utils/date';
 
 export const AdminAuditLogsPage: React.FC = () => {
   const [logs, setLogs] = useState<VoteAuditLog[]>([]);
@@ -83,7 +84,7 @@ export const AdminAuditLogsPage: React.FC = () => {
               {logs.map((log) => (
                 <tr key={log._id} className="hover:bg-slate-50 dark:hover:bg-navy-800/40 transition-colors">
                   <td className="py-3.5 px-4 text-xs text-slate-500 whitespace-nowrap">
-                    {new Date(log.timestamp).toLocaleString('id-ID')}
+                    {formatWibDateTime(log.timestamp)}
                   </td>
                   <td className="py-3.5 px-4 text-xs">
                     <p className="font-bold text-navy-900 dark:text-white">{log.actorName}</p>

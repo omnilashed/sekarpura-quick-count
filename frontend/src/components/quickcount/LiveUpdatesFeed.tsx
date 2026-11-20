@@ -1,6 +1,7 @@
 import React from 'react';
 import { CheckCircle, Clock } from 'lucide-react';
 import { QuickCountData } from '../../types';
+import { formatWibTime } from '../../utils/date';
 
 interface LiveUpdatesFeedProps {
   activities: QuickCountData['recentActivities'];
@@ -22,11 +23,7 @@ export const LiveUpdatesFeed: React.FC<LiveUpdatesFeedProps> = ({ activities }) 
       <div className="space-y-2.5">
         {activities && activities.length > 0 ? (
           activities.map((act) => {
-            const timeStr = new Date(act.verifiedAt).toLocaleTimeString('id-ID', {
-              hour: '2-digit',
-              minute: '2-digit',
-              second: '2-digit',
-            });
+            const timeStr = formatWibTime(act.verifiedAt, true);
 
             return (
               <div

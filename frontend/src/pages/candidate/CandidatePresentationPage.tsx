@@ -17,6 +17,7 @@ import {
   Download,
 } from 'lucide-react';
 import { PresentationViewer } from '../../components/presentation/PresentationViewer';
+import { formatWibShortDateTime } from '../../utils/date';
 
 export const CandidatePresentationPage: React.FC = () => {
   const { user } = useAuthStore();
@@ -170,10 +171,7 @@ export const CandidatePresentationPage: React.FC = () => {
   const formatDate = (dateStr?: string) => {
     if (!dateStr) return '-';
     try {
-      return new Date(dateStr).toLocaleString('id-ID', {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-      });
+      return formatWibShortDateTime(dateStr);
     } catch {
       return dateStr;
     }

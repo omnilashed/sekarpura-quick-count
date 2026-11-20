@@ -1,5 +1,6 @@
 import api, { BASE_URL } from './api';
 import { QuickCountData, VoteSource } from '../types';
+import { getWibFilenameTimestamp } from '../utils/date';
 
 export const quickcountService = {
   async getQuickCount(stageId?: string, round?: number) {
@@ -159,7 +160,7 @@ export const quickcountService = {
     }
     const extension = format === 'xlsx' ? 'xlsx' : format === 'pdf' ? 'pdf' : 'csv';
     if (!filename) {
-      filename = `rekap-resmi-putaran1-dan-2-sekarpura-${Date.now()}.${extension}`;
+      filename = `rekap-resmi-putaran1-dan-2-sekarpura-${getWibFilenameTimestamp()}.${extension}`;
     }
 
     const blob = new Blob([res.data]);

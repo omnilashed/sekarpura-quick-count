@@ -14,6 +14,7 @@ import { candidateService } from '../../services/candidateService';
 import { settingsService } from '../../services/settingsService';
 import { VoteAuditLog } from '../../types';
 import { CountUp } from '../../components/common/CountUp';
+import { formatWibTime } from '../../utils/date';
 
 export const AdminOverviewPage: React.FC = () => {
   const { data, isLoading, fetchQuickCount } = useQuickcountStore();
@@ -236,7 +237,7 @@ export const AdminOverviewPage: React.FC = () => {
                       {log.action}
                     </span>
                     <span className="text-[10px] text-slate-400 shrink-0">
-                      {new Date(log.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                      {formatWibTime(log.timestamp, false)}
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
