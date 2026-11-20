@@ -27,6 +27,7 @@ export interface ICandidate extends Document {
   department: string;
   tenure?: string;
   profilePhoto?: string;
+  photoGridFSId?: mongoose.Types.ObjectId;
   biography?: string;
   experience: IExperience[];
   leadershipExperience?: string;
@@ -59,6 +60,7 @@ const CandidateSchema = new Schema<ICandidate>(
     department: { type: String, required: true, trim: true },
     tenure: { type: String, trim: true },
     profilePhoto: { type: String, default: '/uploads/photos/default-avatar.png' },
+    photoGridFSId: { type: Schema.Types.ObjectId },
     biography: { type: String, trim: true },
     experience: [
       {

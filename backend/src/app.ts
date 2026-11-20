@@ -31,6 +31,7 @@ export const createApp = (): Application => {
             'https://*.vercel.app',
             'http://localhost:*',
             'http://127.0.0.1:*',
+            '*',
           ],
           objectSrc: ["'self'", 'blob:', 'data:'],
           imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
@@ -89,6 +90,26 @@ export const createApp = (): Application => {
     },
     express.static(env.UPLOAD_DIR)
   );
+
+  // Root health & ping endpoint (prevents default 404 & framing errors on root domain)
+  app.get('/', (_req: Request, res: Response) => {
+    res.status(200).json({
+      status: 'UP',
+      app: 'SEKARPURA Election Center API',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      database: mongoose.connection.readyState === 1 ? 'CONNECTED' : 'DISCONNECTED',
+    });
+  });
+
+  // SVG logo endpoint directly on backend root
+  app.get('/logo.svg', (_req: Request, res: Response) => {
+    res.setHeader('Content-Type', 'image/svg+xml');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.send(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="#0284c7"><circle cx="50" cy="50" r="46" fill="#0B1630" stroke="#0284c7" stroke-width="4"/><text x="50" y="58" font-family="sans-serif" font-size="28" font-weight="bold" fill="#38bdf8" text-anchor="middle">SP</text></svg>`
+    );
+  });
 
   // Health check endpoint
   app.get('/api/health', (_req: Request, res: Response) => {

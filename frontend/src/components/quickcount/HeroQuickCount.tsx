@@ -67,14 +67,10 @@ export const HeroQuickCount: React.FC<HeroQuickCountProps> = ({ data, isLoading,
             <span>TEMA MUSCAB IX: "One Vision, One Heart : Strengthening Employee Solidarity"</span>
           </div>
 
-          {/* Schema Indicator Badge */}
+          {/* Schema Indicator Badge (Tahap 2 Definitif) */}
           {data?.schemaRules && (
             <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-navy-800/90 border border-slate-700 text-[11px] sm:text-xs font-bold text-slate-200">
-              {data.schemaRules.stageType === 'STAGE_1' ? (
-                <span>
-                  Putaran 1: Syarat Mutlak ≥ 50% + 1 ({data.schemaRules.stage1.threshold50Plus1} suara)
-                </span>
-              ) : data.schemaRules.stage2.is5050Tie && !data.schemaRules.stage2.gmTieBreakerCast ? (
+              {data.schemaRules.stage2.is5050Tie && !data.schemaRules.stage2.gmTieBreakerCast ? (
                 <span className="text-amber-400 font-extrabold animate-pulse">
                   ⚖️ SERI 50%-50%: Menunggu Suara Penentu GM Halim PK (+1)
                 </span>
@@ -82,8 +78,14 @@ export const HeroQuickCount: React.FC<HeroQuickCountProps> = ({ data, isLoading,
                 <span className="text-emerald-400 font-extrabold">
                   🌟 Definitif: {data.schemaRules.stage2.gmTieBreakerCandidateName} (+1 GM Halim)
                 </span>
+              ) : data.schemaRules.stage2Definitive?.skema1.isFulfilled ? (
+                <span className="text-emerald-400 font-extrabold">
+                  🏆 Menang Mutlak Skema 1 (≥ 50% + 1)
+                </span>
               ) : (
-                <span>Putaran 2: Definitif (Jika Seri 50%-50%, GM Halim PK +1 Suara)</span>
+                <span>
+                  Tahap 2 Definitif: Skema 1 (≥ 50% + 1) → Skema 2 (Seri 50%-50% + 1 GM Halim)
+                </span>
               )}
             </div>
           )}

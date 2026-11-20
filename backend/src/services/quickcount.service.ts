@@ -26,7 +26,35 @@ export interface StageSchemaRules {
   stageType: 'STAGE_1' | 'STAGE_2';
   targetVotes: number;
   remainingVotes: number;
-  // Schema 1: Putaran 1
+  // Alur 2 Skema Pemilihan Ketua Definitif (Tahap 2)
+  stage2Definitive: {
+    activeSchema: 'SKEMA_1' | 'SKEMA_2';
+    threshold50Plus1: number;
+    // Skema 1: Menang jika menerima >= 50% + 1 dari total suara. Jika tidak terpenuhi, diambil 2 calon ke Skema 2
+    skema1: {
+      thresholdVotes: number;
+      hasWinner50Plus1: boolean;
+      winnerCandidateId?: string;
+      winnerName?: string;
+      isFulfilled: boolean;
+      top2CandidateIds: string[];
+      top2CandidateNames: string[];
+    };
+    // Skema 2: Putaran Head-to-Head 2 Calon. Jika suara 50% : 50%, otomatis tambah 1 suara penentu GM Halim PK
+    skema2: {
+      isActive: boolean;
+      is5050Tie: boolean;
+      requiresGmTieBreaker: boolean;
+      gmRoleName: string;
+      gmTieBreakerCast: boolean;
+      gmTieBreakerCandidateId?: string;
+      gmTieBreakerCandidateName?: string;
+      gmTieBreakerVotedAt?: Date;
+      definitiveWinnerId?: string;
+      definitiveWinnerName?: string;
+    };
+  };
+  // Backward-compatible properties
   stage1: {
     threshold50Plus1: number;
     hasWinner50Plus1: boolean;
@@ -36,7 +64,6 @@ export interface StageSchemaRules {
     top2CandidateIds: string[];
     top2CandidateNames: string[];
   };
-  // Schema 2: Putaran 2 Definitif
   stage2: {
     is5050Tie: boolean;
     requiresGmTieBreaker: boolean;
@@ -219,7 +246,11 @@ export class QuickCountService {
         position: cand.position,
         workUnit: cand.workUnit,
         department: cand.department,
-        profilePhoto: cand.profilePhoto,
+        profilePhoto:
+          cand.photoGridFSId ||
+          (cand.profilePhoto && cand.profilePhoto.startsWith('/uploads/photos/candidate-'))
+            ? `/api/candidates/${cand._id}/photo`
+            : cand.profilePhoto,
         votes,
         percentage,
       };
@@ -255,43 +286,89 @@ export class QuickCountService {
 
     const top5 = rankings.slice(0, 5);
 
-    // Schema 1 Calculation (Tahap 1: 50% + 1 threshold, or Top 2 advance)
-    const thresholdStage1 = validVotes > 0 ? Math.floor(validVotes / 2) + 1 : 1;
-    const stage1LeaderVotes = rawRankings[0]?.votes || 0;
-    const hasWinner50Plus1 = stage1LeaderVotes >= thresholdStage1 && stage1LeaderVotes > 0;
+    // 2-Schema Definitive Election Calculations for Stage 2 (Pemilihan Calon Ketua Definitif)
+    const thresholdStage2 = targetVotes > 0 ? Math.floor(targetVotes / 2) + 1 : 13;
+    const stage2LeaderVotes = rawRankings[0]?.votes || 0;
+    const hasWinner50Plus1 = stage2LeaderVotes >= thresholdStage2 && stage2LeaderVotes > 0;
     const top2Candidates = rawRankings.slice(0, 2);
+    const isSkema1Fulfilled = hasWinner50Plus1;
 
-    // Schema 2 Calculation (Tahap 2: 50% - 50% tie detection & GM Halim tie-breaker)
     let is5050Tie = false;
     let requiresGmTieBreaker = false;
     let definitiveWinnerId: string | undefined = undefined;
     let definitiveWinnerName: string | undefined = undefined;
 
     if (stage.stageType === 'STAGE_2') {
-      if (rawRankings.length >= 2) {
-        const top1 = rawRankings[0];
-        const top2 = rawRankings[1];
-        if (top1.votes > 0 && top1.votes === top2.votes) {
-          is5050Tie = true;
-          if (!gmTieBreakerApplied) {
-            requiresGmTieBreaker = true;
-          }
-        } else if (top1.votes > top2.votes) {
-          definitiveWinnerId = top1.candidateId;
-          definitiveWinnerName = top1.fullName;
-        }
-      } else if (rawRankings.length === 1 && rawRankings[0].votes > 0) {
+      if (hasWinner50Plus1) {
+        // Skema 1 Winner directly elected by 50% + 1
         definitiveWinnerId = rawRankings[0].candidateId;
         definitiveWinnerName = rawRankings[0].fullName;
+      } else {
+        // Skema 2: Head-to-Head between top 2 candidates if Skema 1 not fulfilled
+        if (rawRankings.length >= 2) {
+          const top1 = rawRankings[0];
+          const top2 = rawRankings[1];
+          if (top1.votes > 0 && top1.votes === top2.votes) {
+            is5050Tie = true;
+            if (!gmTieBreakerApplied) {
+              requiresGmTieBreaker = true;
+            }
+          } else if (top1.votes > top2.votes) {
+            definitiveWinnerId = top1.candidateId;
+            definitiveWinnerName = top1.fullName;
+          }
+        }
+      }
+
+      // If GM Tie-breaker was cast, determine definitive winner
+      if (gmTieBreakerApplied && stage.tieBreakerCandidateId) {
+        definitiveWinnerId = stage.tieBreakerCandidateId.toString();
+        const candObj = candidates.find(
+          (c) => c._id.toString() === stage.tieBreakerCandidateId?.toString()
+        );
+        definitiveWinnerName = candObj ? candObj.fullName : undefined;
       }
     }
+
+    const remainingVotes = Math.max(0, targetVotes - totalVotesIn);
 
     const schemaRules: StageSchemaRules = {
       stageType: stage.stageType,
       targetVotes,
-      remainingVotes: Math.max(0, targetVotes - totalVotesIn),
+      remainingVotes,
+      stage2Definitive: {
+        activeSchema: isSkema1Fulfilled
+          ? 'SKEMA_1'
+          : rawRankings.length > 2 && !hasWinner50Plus1 && remainingVotes > 0
+          ? 'SKEMA_1'
+          : 'SKEMA_2',
+        threshold50Plus1: thresholdStage2,
+        skema1: {
+          thresholdVotes: thresholdStage2,
+          hasWinner50Plus1,
+          winnerCandidateId: hasWinner50Plus1 ? rawRankings[0]?.candidateId : undefined,
+          winnerName: hasWinner50Plus1 ? rawRankings[0]?.fullName : undefined,
+          isFulfilled: isSkema1Fulfilled,
+          top2CandidateIds: top2Candidates.map((c) => c.candidateId),
+          top2CandidateNames: top2Candidates.map((c) => c.fullName),
+        },
+        skema2: {
+          isActive: !isSkema1Fulfilled,
+          is5050Tie,
+          requiresGmTieBreaker,
+          gmRoleName: stage.tieBreakerRole || 'General Manager Bandara Halim Perdanakusuma',
+          gmTieBreakerCast: gmTieBreakerApplied,
+          gmTieBreakerCandidateId: stage.tieBreakerCandidateId?.toString(),
+          gmTieBreakerCandidateName: stage.tieBreakerCandidateId
+            ? candidates.find((c) => c._id.toString() === stage.tieBreakerCandidateId?.toString())?.fullName
+            : undefined,
+          gmTieBreakerVotedAt: stage.tieBreakerVotedAt,
+          definitiveWinnerId,
+          definitiveWinnerName,
+        },
+      },
       stage1: {
-        threshold50Plus1: thresholdStage1,
+        threshold50Plus1: thresholdStage2,
         hasWinner50Plus1,
         winnerCandidateId: hasWinner50Plus1 ? rawRankings[0]?.candidateId : undefined,
         winnerName: hasWinner50Plus1 ? rawRankings[0]?.fullName : undefined,

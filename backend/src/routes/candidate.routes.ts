@@ -9,6 +9,7 @@ const router = Router();
 
 // Public / Authenticated read
 router.get('/', optionalAuth, CandidateController.getAllCandidates);
+router.get('/:id/photo', CandidateController.getPhoto);
 router.get('/:id', optionalAuth, CandidateController.getCandidateById);
 
 // Admin only: create candidate & linked user

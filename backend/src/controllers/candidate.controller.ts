@@ -1,10 +1,15 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
+import path from 'path';
+import fs from 'fs';
+import { env } from '../config/env.js';
 import { Candidate, ICandidate } from '../models/Candidate.js';
 import { User } from '../models/User.js';
 import { ElectionStage } from '../models/ElectionStage.js';
 import { AuthRequest } from '../middlewares/auth.js';
 import { AuditService } from '../services/audit.service.js';
+import { GridFSService } from '../services/gridfs.service.js';
+import { QuickCountService } from '../services/quickcount.service.js';
 import {
   createCandidateUserSchema,
   updateCandidateProfileSchema,
@@ -54,10 +59,21 @@ export class CandidateController {
       .populate('presentationId')
       .sort({ candidateNumber: 1 });
 
+    const formattedCandidates = candidates.map((cand) => {
+      const obj = cand.toObject();
+      if (
+        cand.photoGridFSId ||
+        (cand.profilePhoto && cand.profilePhoto.startsWith('/uploads/photos/candidate-'))
+      ) {
+        obj.profilePhoto = `/api/candidates/${cand._id}/photo`;
+      }
+      return obj;
+    });
+
     res.status(200).json({
       success: true,
-      count: candidates.length,
-      data: candidates,
+      count: formattedCandidates.length,
+      data: formattedCandidates,
     });
   }
 
@@ -88,9 +104,17 @@ export class CandidateController {
       return;
     }
 
+    const candObj = candidate.toObject();
+    if (
+      candidate.photoGridFSId ||
+      (candidate.profilePhoto && candidate.profilePhoto.startsWith('/uploads/photos/candidate-'))
+    ) {
+      candObj.profilePhoto = `/api/candidates/${candidate._id}/photo`;
+    }
+
     res.status(200).json({
       success: true,
-      data: candidate,
+      data: candObj,
     });
   }
 
@@ -236,12 +260,12 @@ export class CandidateController {
   }
 
   /**
-   * Upload Profile Photo
+   * Upload Profile Photo to Persistent MongoDB GridFS (Anti-loss on container restart)
    */
   static async uploadPhoto(req: AuthRequest, res: Response): Promise<void> {
     const { id } = req.params;
 
-    if (!req.file) {
+    if (!req.file || !req.file.buffer) {
       res.status(400).json({ success: false, message: 'Tidak ada file foto yang diunggah.' });
       return;
     }
@@ -252,15 +276,89 @@ export class CandidateController {
       return;
     }
 
-    const photoUrl = `/uploads/photos/${req.file.filename}`;
+    // Upload byte-for-byte to MongoDB GridFS (Permanent in Atlas)
+    const uploadResult = await GridFSService.uploadPhotoBuffer(
+      req.file.originalname,
+      req.file.buffer,
+      req.file.mimetype,
+      {
+        candidateId: candidate._id.toString(),
+        candidateNumber: candidate.candidateNumber,
+        uploadedBy: req.user?.id,
+      }
+    );
+
+    // Delete old photo in GridFS if it existed
+    if (candidate.photoGridFSId) {
+      await GridFSService.deletePhoto(candidate.photoGridFSId);
+    }
+
+    const photoUrl = `/api/candidates/${candidate._id}/photo?v=${Date.now()}`;
+    candidate.photoGridFSId = uploadResult.fileId;
     candidate.profilePhoto = photoUrl;
     await candidate.save();
 
+    // Invalidate quickcount cache so all screens reflect new photo immediately
+    QuickCountService.invalidateCache();
+
     res.status(200).json({
       success: true,
-      message: 'Foto profil berhasil diunggah.',
+      message: 'Foto profil berhasil disimpan secara permanen di MongoDB GridFS.',
       photoUrl,
     });
+  }
+
+  /**
+   * Serve Candidate Photo from MongoDB GridFS (Permanent & Resilient across container restarts)
+   */
+  static async getPhoto(req: Request, res: Response): Promise<void> {
+    const { id } = req.params;
+
+    const candidate = await Candidate.findById(id);
+    if (!candidate) {
+      res.status(404).send('Foto tidak ditemukan');
+      return;
+    }
+
+    // 1. Primary: Stream directly from MongoDB GridFS
+    if (candidate.photoGridFSId) {
+      const fileInfo = await GridFSService.getPhotoFileInfo(candidate.photoGridFSId);
+      if (fileInfo) {
+        res.setHeader('Content-Type', fileInfo.contentType || 'image/jpeg');
+        res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+        res.setHeader('ETag', `"${candidate.photoGridFSId.toString()}"`);
+        const stream = GridFSService.openPhotoDownloadStream(candidate.photoGridFSId);
+        stream.pipe(res);
+        return;
+      }
+    }
+
+    // 2. Fallback: Check local disk if legacy path exists
+    if (candidate.profilePhoto && !candidate.profilePhoto.startsWith('/api/')) {
+      const cleanPath = candidate.profilePhoto.replace('/uploads/', '');
+      const localFile = path.join(env.UPLOAD_DIR, cleanPath);
+      if (fs.existsSync(localFile)) {
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        res.sendFile(path.resolve(localFile));
+        return;
+      }
+    }
+
+    // 3. Fallback: Serve default avatar
+    const defaultPng = path.join(env.UPLOAD_DIR, 'photos', 'default-avatar.png');
+    if (fs.existsSync(defaultPng)) {
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.sendFile(path.resolve(defaultPng));
+      return;
+    }
+
+    // 4. Ultimate Fallback: Serve crisp SVG candidate avatar (Never 404 or redirect error)
+    res.setHeader('Content-Type', 'image/svg+xml');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.send(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="#94a3b8"><circle cx="50" cy="50" r="50" fill="#e2e8f0"/><circle cx="50" cy="38" r="20" fill="#94a3b8"/><path d="M18 85 A 34 34 0 0 1 82 85 Z" fill="#94a3b8"/></svg>`
+    );
   }
 
   /**

@@ -15,21 +15,12 @@ const thumbnailsDir = path.join(env.UPLOAD_DIR, 'thumbnails');
   }
 });
 
-// Photo upload storage
-const photoStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    cb(null, photosDir);
-  },
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    cb(null, `candidate-${uniqueSuffix}${ext}`);
-  },
-});
+// Photo upload storage (Memory Storage for persistent MongoDB GridFS storage)
+const photoMemoryStorage = multer.memoryStorage();
 
 export const uploadPhoto = multer({
-  storage: photoStorage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
+  storage: photoMemoryStorage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB max
   fileFilter: (_req, file, cb) => {
     const allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
     if (allowedMimes.includes(file.mimetype)) {

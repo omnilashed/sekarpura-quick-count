@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   Plus,
   Search,
@@ -7,6 +7,8 @@ import {
   CheckCircle2,
   Table,
   LayoutGrid,
+  Camera,
+  Upload,
 } from 'lucide-react';
 import { candidateService } from '../../services/candidateService';
 import { Candidate } from '../../types';
@@ -45,6 +47,51 @@ export const AdminCandidatesPage: React.FC = () => {
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(
     null
   );
+
+  // GridFS Photo Upload State
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [photoTargetCandidate, setPhotoTargetCandidate] = useState<Candidate | null>(null);
+  const [uploadingPhotoId, setUploadingPhotoId] = useState<string | null>(null);
+
+  const handlePhotoSelect = (candidate: Candidate) => {
+    setPhotoTargetCandidate(candidate);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+      fileInputRef.current.click();
+    }
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !photoTargetCandidate) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      setActionMessage({ type: 'error', text: 'Ukuran foto maksimal 5MB.' });
+      return;
+    }
+
+    try {
+      setUploadingPhotoId(photoTargetCandidate._id);
+      setActionMessage({
+        type: 'success',
+        text: `Menyimpan foto #${photoTargetCandidate.candidateNumber} (${photoTargetCandidate.fullName}) ke MongoDB GridFS...`,
+      });
+      await candidateService.uploadPhoto(photoTargetCandidate._id, file);
+      setActionMessage({
+        type: 'success',
+        text: `Foto profil #${photoTargetCandidate.candidateNumber} (${photoTargetCandidate.fullName}) berhasil disimpan permanen di MongoDB GridFS!`,
+      });
+      await fetchCandidates();
+    } catch (err: any) {
+      setActionMessage({
+        type: 'error',
+        text: err.response?.data?.message || 'Gagal mengunggah foto profil.',
+      });
+    } finally {
+      setUploadingPhotoId(null);
+      setPhotoTargetCandidate(null);
+    }
+  };
 
   useEffect(() => {
     fetchCandidates();
@@ -138,6 +185,14 @@ export const AdminCandidatesPage: React.FC = () => {
 
   return (
     <div className="space-y-6 sm:space-y-8">
+      {/* Hidden File Input for Direct GridFS Photo Upload */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileChange}
+        accept="image/jpeg,image/png,image/webp"
+        className="hidden"
+      />
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
@@ -277,6 +332,17 @@ export const AdminCandidatesPage: React.FC = () => {
 
                 <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-navy-800">
                   <button
+                    onClick={() => handlePhotoSelect(c)}
+                    disabled={uploadingPhotoId === c._id}
+                    className="p-2 rounded-xl bg-gold-500/10 hover:bg-gold-500/20 text-gold-600 dark:text-gold-400 text-xs font-bold transition-colors min-h-[38px] flex items-center justify-center gap-1.5"
+                    title="Ganti Foto Profil (GridFS)"
+                  >
+                    <Camera className="w-4 h-4" />
+                    <span className="text-[11px] font-bold">
+                      {uploadingPhotoId === c._id ? 'Menyimpan...' : 'Foto'}
+                    </span>
+                  </button>
+                  <button
                     onClick={() => {
                       setSelectedCandidate(c);
                       setVerifyStatus(c.verificationStatus as any);
@@ -371,6 +437,17 @@ export const AdminCandidatesPage: React.FC = () => {
                       </td>
                       <td className="py-3.5 px-4 text-right">
                         <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => handlePhotoSelect(c)}
+                            disabled={uploadingPhotoId === c._id}
+                            className="px-2.5 py-1.5 rounded-xl bg-gold-500/10 hover:bg-gold-500/20 text-gold-600 dark:text-gold-400 text-xs font-bold transition-colors min-h-[36px] flex items-center gap-1.5"
+                            title="Upload / Ganti Foto Profil (GridFS)"
+                          >
+                            <Camera className="w-4 h-4" />
+                            <span className="hidden sm:inline">
+                              {uploadingPhotoId === c._id ? 'Menyimpan...' : 'Ganti Foto'}
+                            </span>
+                          </button>
                           <button
                             onClick={() => {
                               setSelectedCandidate(c);

@@ -113,6 +113,31 @@ export interface StageSchemaRules {
   stageType: 'STAGE_1' | 'STAGE_2';
   targetVotes: number;
   remainingVotes: number;
+  stage2Definitive?: {
+    activeSchema: 'SKEMA_1' | 'SKEMA_2';
+    threshold50Plus1: number;
+    skema1: {
+      thresholdVotes: number;
+      hasWinner50Plus1: boolean;
+      winnerCandidateId?: string;
+      winnerName?: string;
+      isFulfilled: boolean;
+      top2CandidateIds: string[];
+      top2CandidateNames: string[];
+    };
+    skema2: {
+      isActive: boolean;
+      is5050Tie: boolean;
+      requiresGmTieBreaker: boolean;
+      gmRoleName: string;
+      gmTieBreakerCast: boolean;
+      gmTieBreakerCandidateId?: string;
+      gmTieBreakerCandidateName?: string;
+      gmTieBreakerVotedAt?: string;
+      definitiveWinnerId?: string;
+      definitiveWinnerName?: string;
+    };
+  };
   stage1: {
     threshold50Plus1: number;
     hasWinner50Plus1: boolean;

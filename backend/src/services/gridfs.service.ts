@@ -3,8 +3,88 @@ import crypto from 'crypto';
 import { Readable } from 'stream';
 
 let presentationBucket: mongoose.mongo.GridFSBucket | null = null;
+let photoBucket: mongoose.mongo.GridFSBucket | null = null;
 
 export class GridFSService {
+  /**
+   * Mendapatkan instance GridFSBucket untuk koleksi foto profil kandidat (Permanen di Atlas)
+   */
+  static getPhotoBucket(): mongoose.mongo.GridFSBucket {
+    if (!mongoose.connection.db) {
+      throw new Error('Koneksi database MongoDB belum siap.');
+    }
+    if (!photoBucket) {
+      photoBucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, {
+        bucketName: 'candidate_photos',
+      });
+    }
+    return photoBucket;
+  }
+
+  /**
+   * Simpan foto profil ke GridFS (Persisten, anti-hilang saat container restart)
+   */
+  static async uploadPhotoBuffer(
+    originalFileName: string,
+    buffer: Buffer,
+    mimeType: string,
+    metadata: Record<string, any> = {}
+  ): Promise<{ fileId: mongoose.Types.ObjectId; sha256: string; size: number; storageKey: string }> {
+    const bucket = this.getPhotoBucket();
+    const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
+    const uniqueId = new mongoose.Types.ObjectId().toString();
+    const ext = originalFileName.includes('.') ? originalFileName.split('.').pop() : 'jpg';
+    const storageKey = `photo-${uniqueId}.${ext}`;
+
+    return new Promise((resolve, reject) => {
+      const uploadStream = bucket.openUploadStream(storageKey, {
+        contentType: mimeType,
+        metadata: {
+          ...metadata,
+          originalFileName,
+          sha256,
+          uploadedAt: new Date(),
+        },
+      });
+
+      const readable = new Readable();
+      readable.push(buffer);
+      readable.push(null);
+
+      uploadStream.on('error', (err) => reject(err));
+      uploadStream.on('finish', () => {
+        resolve({
+          fileId: uploadStream.id as mongoose.Types.ObjectId,
+          sha256,
+          size: buffer.length,
+          storageKey,
+        });
+      });
+
+      readable.pipe(uploadStream);
+    });
+  }
+
+  static openPhotoDownloadStream(fileId: mongoose.Types.ObjectId): mongoose.mongo.GridFSBucketReadStream {
+    const bucket = this.getPhotoBucket();
+    return bucket.openDownloadStream(fileId);
+  }
+
+  static async getPhotoFileInfo(fileId: mongoose.Types.ObjectId): Promise<any> {
+    const bucket = this.getPhotoBucket();
+    const files = await bucket.find({ _id: fileId }).toArray();
+    return files[0] || null;
+  }
+
+  static async deletePhoto(fileId: mongoose.Types.ObjectId): Promise<void> {
+    const bucket = this.getPhotoBucket();
+    try {
+      await bucket.delete(fileId);
+    } catch {
+      // ignore
+    }
+  }
+
   /**
    * Mendapatkan instance GridFSBucket untuk koleksi presentasi
    */

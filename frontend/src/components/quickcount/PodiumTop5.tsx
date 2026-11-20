@@ -633,87 +633,107 @@ export const PodiumTop5: React.FC<PodiumTop5Props> = ({ top5, quickCountData, is
         )}
       </div>
 
-      {/* Definitive Election Schema Notification Banner */}
+      {/* Definitive Election Schema Notification Banner (2 Schemas for Tahap 2) */}
       {schemaRules && (
         <div className="mt-4 sm:mt-6">
-          {schemaRules.stageType === 'STAGE_1' ? (
-            <div className="p-3.5 sm:p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 text-xs flex items-start gap-3 shadow-sm">
-              <Sparkles className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-              <div className="space-y-0.5">
-                <p className="font-bold text-xs sm:text-sm text-navy-900 dark:text-white">
-                  Ketentuan Pemilihan Tahap 1 (Penjaringan Bakal Calon)
-                </p>
-                <p className="text-[11px] sm:text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                  Kandidat dinyatakan menang mutlak jika menerima surat suara dengan ketentuan{' '}
-                  <strong className="text-amber-600 dark:text-amber-400 font-extrabold">
-                    ≥ 50% + 1
-                  </strong>{' '}
-                  ({schemaRules.stage1.threshold50Plus1} suara sah). Apabila tidak ada yang mencapai ketentuan tersebut, maka diambil{' '}
+          <div className="p-4 sm:p-5 rounded-3xl bg-slate-50 dark:bg-navy-900 border-2 border-slate-200 dark:border-navy-800 shadow-sm space-y-3">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-gold-500 shrink-0" />
+              <h4 className="font-extrabold text-xs sm:text-sm text-navy-900 dark:text-white uppercase tracking-wide">
+                TATA TERTIB PEMILIHAN CALON KETUA DEFINITIF (TAHAP 2)
+              </h4>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+              {/* Skema 1 Box */}
+              <div
+                className={`p-3.5 rounded-2xl border text-xs space-y-1.5 transition-all ${
+                  schemaRules.stage2Definitive?.skema1.isFulfilled
+                    ? 'bg-emerald-500/10 border-emerald-500 text-emerald-950 dark:text-emerald-200'
+                    : 'bg-amber-500/10 border-amber-500/30 text-amber-950 dark:text-amber-200'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-black text-xs uppercase px-2 py-0.5 rounded bg-amber-500/20 text-amber-800 dark:text-amber-300">
+                    Skema 1: Syarat Mutlak (≥ 50% + 1)
+                  </span>
+                  {schemaRules.stage2Definitive?.skema1.isFulfilled && (
+                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500 text-white">
+                      TERPENUHI
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] sm:text-xs leading-relaxed text-slate-700 dark:text-slate-300">
+                  Calon langsung dinyatakan menang definitif jika menerima surat suara{' '}
+                  <strong className="text-amber-600 dark:text-amber-400 font-extrabold">≥ 50% + 1</strong>{' '}
+                  ({schemaRules.stage2Definitive?.threshold50Plus1 || 13} suara dari total {targetVotes} suara).
+                  Jika ketentuan ini <strong>tidak terpenuhi</strong>, maka diambil{' '}
                   <strong className="text-amber-600 dark:text-amber-400 font-extrabold">
                     2 calon peraih suara terbanyak
                   </strong>{' '}
-                  untuk melaju ke Tahap 2 Definitif.
+                  untuk lanjut ke <strong>Skema 2</strong>.
+                </p>
+              </div>
+
+              {/* Skema 2 Box */}
+              <div
+                className={`p-3.5 rounded-2xl border text-xs space-y-1.5 transition-all ${
+                  schemaRules.stage2.is5050Tie && !schemaRules.stage2.gmTieBreakerCast
+                    ? 'bg-rose-500/10 border-rose-500 text-rose-950 dark:text-rose-200 animate-pulse'
+                    : schemaRules.stage2.gmTieBreakerCast
+                    ? 'bg-emerald-500/15 border-emerald-500 text-emerald-950 dark:text-emerald-200'
+                    : 'bg-electric-500/10 border-electric-500/30 text-electric-950 dark:text-electric-200'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-black text-xs uppercase px-2 py-0.5 rounded bg-electric-500/20 text-electric-800 dark:text-electric-300">
+                    Skema 2: Seri 50% - 50% & Suara GM Halim
+                  </span>
+                  {schemaRules.stage2.is5050Tie && !schemaRules.stage2.gmTieBreakerCast && (
+                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-500 text-navy-950 animate-ping">
+                      SERI 50%-50%
+                    </span>
+                  )}
+                  {schemaRules.stage2.gmTieBreakerCast && (
+                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-600 text-white">
+                      GM HALIM VOTE
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] sm:text-xs leading-relaxed text-slate-700 dark:text-slate-300">
+                  Jika kedua calon peraih suara terbanyak mendapatkan perolehan suara sama imbang{' '}
+                  <strong className="text-electric-600 dark:text-electric-400 font-extrabold">(50% : 50%)</strong>,
+                  maka otomatis ada penambahan{' '}
+                  <strong className="text-electric-600 dark:text-electric-400 font-extrabold">
+                    1 suara yang akan diambil oleh General Manager Bandara Halim PK
+                  </strong>{' '}
+                  untuk menentukan pemenang definitif.
                 </p>
               </div>
             </div>
-          ) : (
-            <div className="space-y-2">
-              {schemaRules.stage2.is5050Tie && !schemaRules.stage2.gmTieBreakerCast ? (
-                <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/20 via-rose-500/20 to-amber-500/20 border-2 border-amber-500 text-navy-950 dark:text-white text-xs shadow-lg animate-pulse">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping" />
-                    <strong className="text-xs sm:text-sm font-black text-amber-700 dark:text-amber-300 uppercase tracking-wide">
-                      ⚖️ KETENTUAN TAHAP 2: STATUS SERI 50% - 50%
-                    </strong>
-                  </div>
-                  <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-200 leading-relaxed">
-                    Kedua calon memperoleh suara sama imbang (50% : 50%). Sesuai Tata Tertib Pemilihan Definitif SEKARPURA Halim,{' '}
-                    <strong className="text-amber-700 dark:text-amber-300 font-extrabold">
-                      otomatis ada penambahan 1 suara yang akan diambil oleh General Manager Bandara Halim Perdanakusuma
-                    </strong>{' '}
-                    untuk menentukan Ketua Definitif.
-                  </p>
-                </div>
-              ) : schemaRules.stage2.gmTieBreakerCast ? (
-                <div className="p-4 rounded-2xl bg-emerald-500/15 border-2 border-emerald-500 text-emerald-950 dark:text-white text-xs shadow-md">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Trophy className="w-4 h-4 text-gold-500 shrink-0" />
-                    <strong className="text-xs sm:text-sm font-black text-emerald-700 dark:text-emerald-300 uppercase tracking-wide">
-                      🏆 PEMENANG DEFINITIF KETUA SEKARPURA HALIM TERPILIH
-                    </strong>
-                  </div>
-                  <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-200 leading-relaxed">
-                    Setelah hasil seri 50%-50%,{' '}
-                    <strong className="text-emerald-700 dark:text-emerald-300 font-extrabold">
-                      {schemaRules.stage2.gmTieBreakerCandidateName || 'Calon Terpilih'}
-                    </strong>{' '}
-                    menerima 1 Suara Penentu dari{' '}
-                    <strong>General Manager Bandara Halim Perdanakusuma</strong> dan sah ditetapkan sebagai Ketua Definitif SEKARPURA Halim.
-                  </p>
-                </div>
-              ) : (
-                <div className="p-3.5 sm:p-4 rounded-2xl bg-electric-500/10 border border-electric-500/30 text-electric-900 dark:text-electric-200 text-xs flex items-start gap-3">
-                  <Sparkles className="w-4 h-4 text-electric-500 shrink-0 mt-0.5" />
-                  <div className="space-y-0.5">
-                    <p className="font-bold text-xs sm:text-sm text-navy-900 dark:text-white">
-                      Ketentuan Pemilihan Tahap 2 (Calon Ketua Definitif)
-                    </p>
-                    <p className="text-[11px] sm:text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                      Calon dengan suara terbanyak ditetapkan sebagai Ketua Definitif. Apabila terjadi hasil seri{' '}
-                      <strong className="text-electric-600 dark:text-electric-400 font-extrabold">
-                        50% : 50%
-                      </strong>
-                      , maka otomatis ada tambah{' '}
-                      <strong className="text-electric-600 dark:text-electric-400 font-extrabold">
-                        1 suara yang akan diambil oleh General Manager Bandara Halim PK
-                      </strong>
-                      .
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+
+            {/* Tie-Breaker Alert or Celebration Box */}
+            {schemaRules.stage2.is5050Tie && !schemaRules.stage2.gmTieBreakerCast && (
+              <div className="p-3.5 rounded-2xl bg-amber-500/20 border-2 border-amber-500 text-navy-950 dark:text-white text-xs">
+                <p className="font-extrabold text-amber-700 dark:text-amber-300">
+                  ⚖️ SITUASI SERI 50% - 50%: Mengaktifkan Hak 1 Suara Penentu oleh General Manager Bandara Halim Perdanakusuma sesuai Tata Tertib Pemilihan Definitif.
+                </p>
+              </div>
+            )}
+
+            {schemaRules.stage2.gmTieBreakerCast && (
+              <div className="p-3.5 rounded-2xl bg-emerald-500/20 border-2 border-emerald-500 text-emerald-950 dark:text-white text-xs flex items-center gap-2">
+                <Trophy className="w-4 h-4 text-gold-500 shrink-0" />
+                <p className="font-extrabold">
+                  🏆 Pemenang Definitif Terpilih:{' '}
+                  <span className="underline">
+                    {schemaRules.stage2.gmTieBreakerCandidateName || 'Calon Terpilih'}
+                  </span>{' '}
+                  setelah menerima 1 Suara Penentu dari General Manager Bandara Halim Perdanakusuma.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
