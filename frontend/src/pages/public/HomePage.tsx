@@ -50,8 +50,8 @@ export const HomePage: React.FC = () => {
       {/* 2. Official MUSCAB IX Theme & Meaning Section */}
       <MuscabThemeSection />
 
-      {/* 3. LIVE TOP 5 CANDIDATE PODIUM */}
-      <PodiumTop5 top5={data?.top5 || []} isLoading={isLoading} />
+      {/* 3. LIVE TOP 5 CANDIDATE PODIUM & HASIL PERHITUNGAN SUARA */}
+      <PodiumTop5 top5={data?.top5 || []} quickCountData={data} isLoading={isLoading} />
 
       {/* 3. Live Vote Statistics & Charts Grid */}
       {data && data.rankings && data.rankings.length > 0 && (

@@ -38,4 +38,19 @@ export const electionService = {
     );
     return res.data;
   },
+
+  async castGmTieBreaker(stageId: string, candidateId: string, notes?: string) {
+    const res = await api.post<{ success: boolean; message: string; quickCount: any }>(
+      `/elections/stages/${stageId}/gm-tie-breaker`,
+      { candidateId, notes }
+    );
+    return res.data;
+  },
+
+  async resetGmTieBreaker(stageId: string) {
+    const res = await api.delete<{ success: boolean; message: string; quickCount: any }>(
+      `/elections/stages/${stageId}/gm-tie-breaker`
+    );
+    return res.data;
+  },
 };

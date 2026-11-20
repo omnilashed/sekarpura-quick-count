@@ -22,12 +22,42 @@ export interface CandidateRanking {
   isTied: boolean;
 }
 
+export interface StageSchemaRules {
+  stageType: 'STAGE_1' | 'STAGE_2';
+  targetVotes: number;
+  remainingVotes: number;
+  // Schema 1: Putaran 1
+  stage1: {
+    threshold50Plus1: number;
+    hasWinner50Plus1: boolean;
+    winnerCandidateId?: string;
+    winnerName?: string;
+    advancingCount: number; // 2
+    top2CandidateIds: string[];
+    top2CandidateNames: string[];
+  };
+  // Schema 2: Putaran 2 Definitif
+  stage2: {
+    is5050Tie: boolean;
+    requiresGmTieBreaker: boolean;
+    gmRoleName: string;
+    gmTieBreakerCast: boolean;
+    gmTieBreakerCandidateId?: string;
+    gmTieBreakerCandidateName?: string;
+    gmTieBreakerVotedAt?: Date;
+    definitiveWinnerId?: string;
+    definitiveWinnerName?: string;
+  };
+}
+
 export interface QuickCountResult {
   electionId: string;
   stageId: string;
   stageType: string;
   stageName: string;
   stageStatus: string;
+  totalEligibleVoters: number;
+  targetVotes: number;
   totalVotesIn: number;
   validVotes: number;
   invalidVotes: number;
@@ -44,6 +74,7 @@ export interface QuickCountResult {
     completed: number;
     pending: number;
   };
+  schemaRules: StageSchemaRules;
   timeline: Array<{
     timestamp: string;
     totalVotes: number;
@@ -154,7 +185,27 @@ export class QuickCountService {
       timeline.push(timeEntry);
     }
 
+    // Apply GM Halim Tie-Breaker Vote in Stage 2 if active (+1 decisive vote)
+    let gmTieBreakerApplied = false;
+    if (stage.stageType === 'STAGE_2' && stage.isTieBreakerActive && stage.tieBreakerCandidateId) {
+      const cId = stage.tieBreakerCandidateId.toString();
+      if (voteCountMap.has(cId)) {
+        voteCountMap.set(cId, (voteCountMap.get(cId) || 0) + 1);
+        validVotes += 1;
+        gmTieBreakerApplied = true;
+      }
+    }
+
     const totalVotesIn = validVotes + invalidVotes;
+
+    // Target votes determination: default 25 for Stage 2 (24 pemilih muscab + 1 potensi suara penentu GM Halim)
+    const baseTarget =
+      stage.targetVotes && stage.targetVotes > 0
+        ? stage.targetVotes
+        : stage.stageType === 'STAGE_2'
+        ? 25
+        : stage.totalEligibleVoters || 102;
+    const targetVotes = baseTarget;
 
     // Build rankings with deterministic tie-breaking (votes DESC, then candidateNumber ASC)
     const rawRankings = candidates.map((cand) => {
@@ -204,6 +255,65 @@ export class QuickCountService {
 
     const top5 = rankings.slice(0, 5);
 
+    // Schema 1 Calculation (Tahap 1: 50% + 1 threshold, or Top 2 advance)
+    const thresholdStage1 = validVotes > 0 ? Math.floor(validVotes / 2) + 1 : 1;
+    const stage1LeaderVotes = rawRankings[0]?.votes || 0;
+    const hasWinner50Plus1 = stage1LeaderVotes >= thresholdStage1 && stage1LeaderVotes > 0;
+    const top2Candidates = rawRankings.slice(0, 2);
+
+    // Schema 2 Calculation (Tahap 2: 50% - 50% tie detection & GM Halim tie-breaker)
+    let is5050Tie = false;
+    let requiresGmTieBreaker = false;
+    let definitiveWinnerId: string | undefined = undefined;
+    let definitiveWinnerName: string | undefined = undefined;
+
+    if (stage.stageType === 'STAGE_2') {
+      if (rawRankings.length >= 2) {
+        const top1 = rawRankings[0];
+        const top2 = rawRankings[1];
+        if (top1.votes > 0 && top1.votes === top2.votes) {
+          is5050Tie = true;
+          if (!gmTieBreakerApplied) {
+            requiresGmTieBreaker = true;
+          }
+        } else if (top1.votes > top2.votes) {
+          definitiveWinnerId = top1.candidateId;
+          definitiveWinnerName = top1.fullName;
+        }
+      } else if (rawRankings.length === 1 && rawRankings[0].votes > 0) {
+        definitiveWinnerId = rawRankings[0].candidateId;
+        definitiveWinnerName = rawRankings[0].fullName;
+      }
+    }
+
+    const schemaRules: StageSchemaRules = {
+      stageType: stage.stageType,
+      targetVotes,
+      remainingVotes: Math.max(0, targetVotes - totalVotesIn),
+      stage1: {
+        threshold50Plus1: thresholdStage1,
+        hasWinner50Plus1,
+        winnerCandidateId: hasWinner50Plus1 ? rawRankings[0]?.candidateId : undefined,
+        winnerName: hasWinner50Plus1 ? rawRankings[0]?.fullName : undefined,
+        advancingCount: 2,
+        top2CandidateIds: top2Candidates.map((c) => c.candidateId),
+        top2CandidateNames: top2Candidates.map((c) => c.fullName),
+      },
+      stage2: {
+        is5050Tie,
+        requiresGmTieBreaker,
+        gmRoleName: stage.tieBreakerRole || 'General Manager Bandara Halim Perdanakusuma',
+        gmTieBreakerCast: gmTieBreakerApplied,
+        gmTieBreakerCandidateId: stage.tieBreakerCandidateId?.toString(),
+        gmTieBreakerCandidateName: stage.tieBreakerCandidateId
+          ? candidates.find((c) => c._id.toString() === stage.tieBreakerCandidateId?.toString())?.fullName
+          : undefined,
+        gmTieBreakerVotedAt: stage.tieBreakerVotedAt,
+        definitiveWinnerId,
+        definitiveWinnerName,
+      },
+    };
+
     // Leader change detection
     const currentLeader = rankings[0]?.votes > 0 ? rankings[0].candidateId : undefined;
     const prevLeader = previousLeaderMap.get(stageId);
@@ -223,6 +333,7 @@ export class QuickCountService {
       invalidVotes,
       targetSourcesCount: totalSources,
       completedSourcesCount: completedSources,
+      targetVotes,
     });
 
     // Recent safe public activities
@@ -240,7 +351,11 @@ export class QuickCountService {
       }));
 
     const progressPercentage =
-      totalSources > 0 ? Number(((completedSources / totalSources) * 100).toFixed(1)) : 0;
+      targetVotes > 0
+        ? Number(((totalVotesIn / targetVotes) * 100).toFixed(1))
+        : totalSources > 0
+        ? Number(((completedSources / totalSources) * 100).toFixed(1))
+        : 0;
 
     const result: QuickCountResult = {
       electionId: stage.electionId.toString(),
@@ -248,6 +363,8 @@ export class QuickCountService {
       stageType: stage.stageType,
       stageName: stage.name,
       stageStatus: stage.status,
+      totalEligibleVoters: stage.totalEligibleVoters || targetVotes,
+      targetVotes,
       totalVotesIn,
       validVotes,
       invalidVotes,
@@ -264,6 +381,7 @@ export class QuickCountService {
         completed: completedSources,
         pending: Math.max(0, totalSources - completedSources),
       },
+      schemaRules,
       timeline,
       recentActivities,
       lastUpdatedAt: new Date(),

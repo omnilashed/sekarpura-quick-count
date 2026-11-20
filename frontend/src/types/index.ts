@@ -109,12 +109,40 @@ export interface CandidateRanking {
   isTied: boolean;
 }
 
+export interface StageSchemaRules {
+  stageType: 'STAGE_1' | 'STAGE_2';
+  targetVotes: number;
+  remainingVotes: number;
+  stage1: {
+    threshold50Plus1: number;
+    hasWinner50Plus1: boolean;
+    winnerCandidateId?: string;
+    winnerName?: string;
+    advancingCount: number;
+    top2CandidateIds: string[];
+    top2CandidateNames: string[];
+  };
+  stage2: {
+    is5050Tie: boolean;
+    requiresGmTieBreaker: boolean;
+    gmRoleName: string;
+    gmTieBreakerCast: boolean;
+    gmTieBreakerCandidateId?: string;
+    gmTieBreakerCandidateName?: string;
+    gmTieBreakerVotedAt?: string;
+    definitiveWinnerId?: string;
+    definitiveWinnerName?: string;
+  };
+}
+
 export interface QuickCountData {
   electionId: string;
   stageId: string;
   stageType: 'STAGE_1' | 'STAGE_2';
   stageName: string;
   stageStatus: 'PENDING' | 'COUNTING' | 'COMPLETED' | 'LOCKED';
+  totalEligibleVoters?: number;
+  targetVotes?: number;
   totalVotesIn: number;
   validVotes: number;
   invalidVotes: number;
@@ -131,6 +159,7 @@ export interface QuickCountData {
     completed: number;
     pending: number;
   };
+  schemaRules?: StageSchemaRules;
   timeline: Array<{
     timestamp: string;
     totalVotes: number;
@@ -159,11 +188,17 @@ export interface ElectionStage {
   candidateIds: any[];
   status: 'PENDING' | 'COUNTING' | 'COMPLETED' | 'LOCKED';
   totalEligibleVoters: number;
+  targetVotes?: number;
   totalVotesIn: number;
   validVotes: number;
   invalidVotes: number;
   targetSourcesCount: number;
   completedSourcesCount: number;
+  isTieBreakerActive?: boolean;
+  tieBreakerRole?: string;
+  tieBreakerCandidateId?: any;
+  tieBreakerVotedAt?: string;
+  tieBreakerNotes?: string;
   startedAt?: string;
   endedAt?: string;
   finalizedAt?: string;

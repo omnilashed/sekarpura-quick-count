@@ -11,11 +11,18 @@ export interface IElectionStage extends Document {
   candidateIds: mongoose.Types.ObjectId[];
   status: StageStatus;
   totalEligibleVoters: number;
+  targetVotes: number;
   totalVotesIn: number;
   validVotes: number;
   invalidVotes: number;
   targetSourcesCount: number;
   completedSourcesCount: number;
+  // Stage 2 Tie-breaker by General Manager Bandara Halim PK (+1 suara penentu jika 50%-50%)
+  isTieBreakerActive: boolean;
+  tieBreakerRole: string;
+  tieBreakerCandidateId?: mongoose.Types.ObjectId;
+  tieBreakerVotedAt?: Date;
+  tieBreakerNotes?: string;
   startedAt?: Date;
   endedAt?: Date;
   finalizedAt?: Date;
@@ -43,11 +50,20 @@ const ElectionStageSchema = new Schema<IElectionStage>(
       index: true,
     },
     totalEligibleVoters: { type: Number, default: 0 },
+    targetVotes: { type: Number, default: 24 },
     totalVotesIn: { type: Number, default: 0 },
     validVotes: { type: Number, default: 0 },
     invalidVotes: { type: Number, default: 0 },
     targetSourcesCount: { type: Number, default: 0 },
     completedSourcesCount: { type: Number, default: 0 },
+    isTieBreakerActive: { type: Boolean, default: false },
+    tieBreakerRole: {
+      type: String,
+      default: 'General Manager Bandara Halim Perdanakusuma',
+    },
+    tieBreakerCandidateId: { type: Schema.Types.ObjectId, ref: 'Candidate' },
+    tieBreakerVotedAt: { type: Date },
+    tieBreakerNotes: { type: String },
     startedAt: { type: Date },
     endedAt: { type: Date },
     finalizedAt: { type: Date },

@@ -67,8 +67,8 @@ export const LiveQuickCountPage: React.FC = () => {
         onRefresh={() => fetchQuickCount()}
       />
 
-      {/* Podium Top 5 */}
-      <PodiumTop5 top5={data?.top5 || []} isLoading={isLoading} />
+      {/* Podium Top 5 with Hasil Perhitungan Suara */}
+      <PodiumTop5 top5={data?.top5 || []} quickCountData={data} isLoading={isLoading} />
 
       {/* Analytics Dashboard Grid */}
       {data && data.rankings && data.rankings.length > 0 && (
@@ -87,7 +87,7 @@ export const LiveQuickCountPage: React.FC = () => {
             </div>
           </div>
 
-          <LeaderboardTable rankings={data.rankings} />
+          <LeaderboardTable rankings={data.rankings} targetVotes={data?.targetVotes || 25} />
 
           <LiveUpdatesFeed activities={data.recentActivities} />
         </div>

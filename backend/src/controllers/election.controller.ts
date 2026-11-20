@@ -5,7 +5,8 @@ import { Candidate } from '../models/Candidate.js';
 import { VoteSource } from '../models/VoteSource.js';
 import { AuthRequest } from '../middlewares/auth.js';
 import { AuditService } from '../services/audit.service.js';
-import { broadcastStageChanged } from '../config/socket.js';
+import { broadcastStageChanged, broadcastQuickCountUpdate } from '../config/socket.js';
+import { QuickCountService } from '../services/quickcount.service.js';
 import { promoteCandidatesSchema, updateStageStatusSchema } from '../validations/schemas.js';
 
 export class ElectionController {
@@ -310,6 +311,125 @@ export class ElectionController {
       success: true,
       message: `${candidateIds.length} calon ketua berhasil ditetapkan lolos ke Tahap 2. QuickCount Tahap 2 siap dimulai.`,
       stage2,
+    });
+  }
+
+  /**
+   * Admin/GM: Cast 1 decisive vote by General Manager Bandara Halim PK in Stage 2 (50%-50% tie-breaker)
+   */
+  static async castGmTieBreaker(req: AuthRequest, res: Response): Promise<void> {
+    const { stageId } = req.params;
+    const { candidateId, notes } = req.body;
+
+    if (!candidateId) {
+      res.status(400).json({ success: false, message: 'Kandidat penerima suara penentu GM Halim wajib dipilih.' });
+      return;
+    }
+
+    const stage = await ElectionStage.findById(stageId);
+    if (!stage) {
+      res.status(404).json({ success: false, message: 'Tahap pemilihan tidak ditemukan.' });
+      return;
+    }
+
+    if (stage.stageType !== 'STAGE_2') {
+      res.status(400).json({
+        success: false,
+        message: 'Hak 1 suara penentu GM Bandara Halim PK hanya berlaku untuk Pemilihan Definitif Tahap 2.',
+      });
+      return;
+    }
+
+    const candidate = await Candidate.findById(candidateId);
+    if (!candidate) {
+      res.status(404).json({ success: false, message: 'Kandidat tidak ditemukan.' });
+      return;
+    }
+
+    stage.isTieBreakerActive = true;
+    stage.tieBreakerRole = 'General Manager Bandara Halim Perdanakusuma';
+    stage.tieBreakerCandidateId = candidate._id as any;
+    stage.tieBreakerVotedAt = new Date();
+    stage.tieBreakerNotes = notes || 'Suara Penentu oleh General Manager Bandara Halim PK untuk menentukan Ketua Definitif';
+    await stage.save();
+
+    // Invalidate quick count cache and recalculate
+    QuickCountService.invalidateCache(stageId);
+    const qcData = await QuickCountService.calculateStageQuickCount(stageId, true);
+
+    // Broadcast live to all connected screens
+    broadcastQuickCountUpdate({
+      electionId: stage.electionId.toString(),
+      stageId: stage._id.toString(),
+      quickcountData: qcData,
+      leaderChanged: qcData.leaderChanged,
+    });
+
+    // Record audit trail
+    await AuditService.record({
+      actorId: req.user?.id,
+      actorName: req.user?.name || 'General Manager Bandara Halim PK',
+      actorRole: req.user?.role || 'SUPER_ADMIN',
+      action: 'GM_TIE_BREAKER_VOTE',
+      entityType: 'ElectionStage',
+      entityId: stage._id.toString(),
+      after: {
+        candidateId,
+        candidateName: candidate.fullName,
+        notes: stage.tieBreakerNotes,
+      },
+      reason: `Pemberian 1 suara penentu oleh General Manager Bandara Halim PK kepada ${candidate.fullName}`,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `1 Suara Penentu General Manager Bandara Halim PK berhasil diberikan kepada ${candidate.fullName}.`,
+      quickCount: qcData,
+    });
+  }
+
+  /**
+   * Admin/GM: Reset/Cancel GM Tie-Breaker Vote in Stage 2
+   */
+  static async resetGmTieBreaker(req: AuthRequest, res: Response): Promise<void> {
+    const { stageId } = req.params;
+
+    const stage = await ElectionStage.findById(stageId);
+    if (!stage) {
+      res.status(404).json({ success: false, message: 'Tahap pemilihan tidak ditemukan.' });
+      return;
+    }
+
+    stage.isTieBreakerActive = false;
+    stage.tieBreakerCandidateId = undefined;
+    stage.tieBreakerVotedAt = undefined;
+    stage.tieBreakerNotes = undefined;
+    await stage.save();
+
+    QuickCountService.invalidateCache(stageId);
+    const qcData = await QuickCountService.calculateStageQuickCount(stageId, true);
+
+    broadcastQuickCountUpdate({
+      electionId: stage.electionId.toString(),
+      stageId: stage._id.toString(),
+      quickcountData: qcData,
+      leaderChanged: qcData.leaderChanged,
+    });
+
+    await AuditService.record({
+      actorId: req.user?.id,
+      actorName: req.user?.name || 'Admin',
+      actorRole: req.user?.role || 'ADMIN',
+      action: 'GM_TIE_BREAKER_RESET',
+      entityType: 'ElectionStage',
+      entityId: stage._id.toString(),
+      reason: 'Pembatalan suara penentu GM Bandara Halim PK',
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Suara penentu GM Bandara Halim PK berhasil direset.',
+      quickCount: qcData,
     });
   }
 }

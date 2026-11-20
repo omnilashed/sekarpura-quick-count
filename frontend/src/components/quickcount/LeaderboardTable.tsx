@@ -6,9 +6,10 @@ import { BASE_URL } from '../../services/api';
 
 interface LeaderboardTableProps {
   rankings: CandidateRanking[];
+  targetVotes?: number;
 }
 
-export const LeaderboardTable: React.FC<LeaderboardTableProps> = ({ rankings }) => {
+export const LeaderboardTable: React.FC<LeaderboardTableProps> = ({ rankings, targetVotes }) => {
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
 
   return (
@@ -103,6 +104,9 @@ export const LeaderboardTable: React.FC<LeaderboardTableProps> = ({ rankings }) 
                 <div className="text-right">
                   <span className="font-black text-sm text-navy-900 dark:text-white">
                     <CountUp value={c.votes} />
+                    {targetVotes && (
+                      <span className="text-[11px] font-normal text-slate-400"> / {targetVotes}</span>
+                    )}
                   </span>
                   <span className="text-[11px] font-bold text-electric-600 dark:text-electric-400 ml-1.5">
                     ({c.percentage}%)
@@ -233,6 +237,9 @@ export const LeaderboardTable: React.FC<LeaderboardTableProps> = ({ rankings }) 
                   {/* Votes */}
                   <td className="py-3 px-2 sm:px-3 text-right font-black text-xs sm:text-sm text-navy-900 dark:text-white whitespace-nowrap">
                     <CountUp value={c.votes} />
+                    {targetVotes && (
+                      <span className="text-[11px] font-normal text-slate-400"> / {targetVotes}</span>
+                    )}
                   </td>
 
                   {/* Percentage */}

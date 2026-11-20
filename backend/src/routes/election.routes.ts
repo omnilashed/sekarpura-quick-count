@@ -33,4 +33,20 @@ router.post(
   ElectionController.promoteCandidatesToStage2
 );
 
+// Admin/GM: Cast GM Bandara Halim PK Tie-Breaker Vote in Stage 2
+router.post(
+  '/stages/:stageId/gm-tie-breaker',
+  authenticate,
+  requireRoles('ADMIN', 'SUPER_ADMIN'),
+  ElectionController.castGmTieBreaker
+);
+
+// Admin/GM: Reset GM Bandara Halim PK Tie-Breaker Vote in Stage 2
+router.delete(
+  '/stages/:stageId/gm-tie-breaker',
+  authenticate,
+  requireRoles('ADMIN', 'SUPER_ADMIN'),
+  ElectionController.resetGmTieBreaker
+);
+
 export default router;

@@ -31,12 +31,12 @@ export const AdminElectionStagesPage: React.FC = () => {
       const candRes = await candidateService.getAll();
       setCandidates(candRes.data);
 
-      // Pre-select top 5 candidates
+      // Pre-select top 2 candidates according to Schema 1 (Top 2 advance if no 50% + 1 winner)
       const defaultQualified = candRes.data.filter((c) => c.stage2Qualified).map((c) => c._id);
       if (defaultQualified.length > 0) {
         setSelectedCandidateIds(defaultQualified);
       } else {
-        setSelectedCandidateIds(candRes.data.slice(0, 5).map((c) => c._id));
+        setSelectedCandidateIds(candRes.data.slice(0, 2).map((c) => c._id));
       }
     } catch (err) {
       console.error(err);
@@ -225,6 +225,22 @@ export const AdminElectionStagesPage: React.FC = () => {
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
               Pilih bakal calon yang lolos ke tahap definitif. Suara Tahap 2 dihitung dalam sesi quickcount baru yang bersih.
+            </p>
+          </div>
+        </div>
+
+        {/* Official Schema Rules Info Callout */}
+        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-navy-800/60 border border-slate-200 dark:border-navy-700 text-xs space-y-2">
+          <div className="flex items-start gap-2">
+            <span className="font-extrabold text-amber-500 text-sm">1.</span>
+            <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
+              <strong className="text-navy-900 dark:text-white">Pemilihan Tahap 1:</strong> Jika salah satu calon tidak menerima surat suara dengan ketentuan <strong>≥ 50% + 1</strong> dari total suara seluruhnya, maka otomatis diambil <strong>2 calon peraih suara terbanyak</strong> untuk lanjut ke Tahap 2 Definitif.
+            </p>
+          </div>
+          <div className="flex items-start gap-2">
+            <span className="font-extrabold text-electric-500 text-sm">2.</span>
+            <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
+              <strong className="text-navy-900 dark:text-white">Pemilihan Tahap 2:</strong> Jika kedua calon mendapatkan suara sama imbang <strong>(50% : 50%)</strong>, maka otomatis ada penambahan <strong>1 suara penentu yang akan diambil oleh General Manager Bandara Halim PK</strong>.
             </p>
           </div>
         </div>

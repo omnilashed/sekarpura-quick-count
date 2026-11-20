@@ -61,9 +61,32 @@ export const HeroQuickCount: React.FC<HeroQuickCountProps> = ({ data, isLoading,
         <p className="text-xs sm:text-base md:text-lg font-medium text-slate-300 mt-1.5 sm:mt-2">
           Musyawarah Cabang IX & Pemilihan Ketua Serikat Pekerja Angkasa Pura Indonesia Cabang Halim Perdanakusuma
         </p>
-        <div className="mt-3 inline-flex flex-wrap items-center gap-2 px-3.5 py-1.5 rounded-full bg-gradient-to-r from-gold-500/20 via-electric-500/20 to-gold-500/20 border border-gold-500/40 text-gold-300 text-xs sm:text-sm font-extrabold shadow-sm">
-          <span className="w-2 h-2 rounded-full bg-gold-400 animate-pulse shrink-0" />
-          <span>TEMA MUSCAB IX: "One Vision, One Heart : Strengthening Employee Solidarity"</span>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-gradient-to-r from-gold-500/20 via-electric-500/20 to-gold-500/20 border border-gold-500/40 text-gold-300 text-xs sm:text-sm font-extrabold shadow-sm">
+            <span className="w-2 h-2 rounded-full bg-gold-400 animate-pulse shrink-0" />
+            <span>TEMA MUSCAB IX: "One Vision, One Heart : Strengthening Employee Solidarity"</span>
+          </div>
+
+          {/* Schema Indicator Badge */}
+          {data?.schemaRules && (
+            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-navy-800/90 border border-slate-700 text-[11px] sm:text-xs font-bold text-slate-200">
+              {data.schemaRules.stageType === 'STAGE_1' ? (
+                <span>
+                  Putaran 1: Syarat Mutlak ≥ 50% + 1 ({data.schemaRules.stage1.threshold50Plus1} suara)
+                </span>
+              ) : data.schemaRules.stage2.is5050Tie && !data.schemaRules.stage2.gmTieBreakerCast ? (
+                <span className="text-amber-400 font-extrabold animate-pulse">
+                  ⚖️ SERI 50%-50%: Menunggu Suara Penentu GM Halim PK (+1)
+                </span>
+              ) : data.schemaRules.stage2.gmTieBreakerCast ? (
+                <span className="text-emerald-400 font-extrabold">
+                  🌟 Definitif: {data.schemaRules.stage2.gmTieBreakerCandidateName} (+1 GM Halim)
+                </span>
+              ) : (
+                <span>Putaran 2: Definitif (Jika Seri 50%-50%, GM Halim PK +1 Suara)</span>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -72,11 +95,17 @@ export const HeroQuickCount: React.FC<HeroQuickCountProps> = ({ data, isLoading,
         {/* Metric 1: Total Suara Masuk */}
         <div className="bg-navy-900/80 backdrop-blur-md rounded-2xl p-3.5 sm:p-5 border border-slate-700/70 hover:border-gold-500/40 transition-colors">
           <p className="text-[10px] sm:text-xs text-slate-400 font-medium">Total Suara Masuk</p>
-          <div className="text-xl 2xs:text-2xl sm:text-3xl md:text-4xl font-extrabold text-white mt-0.5 sm:mt-1">
-            <CountUp value={data?.totalVotesIn || 0} />
+          <div className="flex items-baseline gap-1 mt-0.5 sm:mt-1">
+            <span className="text-xl 2xs:text-2xl sm:text-3xl md:text-4xl font-extrabold text-white">
+              <CountUp value={data?.totalVotesIn || 0} />
+            </span>
+            <span className="text-xs sm:text-sm md:text-base font-bold text-slate-400">
+              / {data?.targetVotes || 25}
+            </span>
           </div>
           <p className="text-[10px] sm:text-[11px] text-slate-400 mt-1 truncate">
-            Sah: <span className="text-emerald-400 font-bold">{data?.validVotes || 0}</span> | Tdk: <span className="text-rose-400 font-bold">{data?.invalidVotes || 0}</span>
+            Sah: <span className="text-emerald-400 font-bold">{data?.validVotes || 0}</span> | Tdk:{' '}
+            <span className="text-rose-400 font-bold">{data?.invalidVotes || 0}</span>
           </p>
         </div>
 

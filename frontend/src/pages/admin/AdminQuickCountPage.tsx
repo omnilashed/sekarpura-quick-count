@@ -34,6 +34,11 @@ export const AdminQuickCountPage: React.FC = () => {
   const [historyData, setHistoryData] = useState<any[]>([]);
   const [showHistoryModal, setShowHistoryModal] = useState<boolean>(false);
 
+  // GM Tie-breaker state
+  const [selectedGmCandidateId, setSelectedGmCandidateId] = useState<string>('');
+  const [gmNotes, setGmNotes] = useState<string>('');
+  const [submittingGm, setSubmittingGm] = useState<boolean>(false);
+
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [tallyFeedback, setTallyFeedback] = useState<string | null>(null);
 
@@ -242,6 +247,69 @@ export const AdminQuickCountPage: React.FC = () => {
     }
   };
 
+  const handleCastGmTieBreaker = async () => {
+    if (!selectedGmCandidateId || !selectedStageId) return;
+    const cand = candidates.find((c) => c._id === selectedGmCandidateId);
+    if (
+      !window.confirm(
+        `Apakah Anda yakin ingin memberikan 1 Suara Penentu General Manager Bandara Halim PK kepada ${
+          cand?.fullName || 'calon ini'
+        }?`
+      )
+    ) {
+      return;
+    }
+    setSubmittingGm(true);
+    try {
+      const res = await electionService.castGmTieBreaker(
+        selectedStageId,
+        selectedGmCandidateId,
+        gmNotes
+      );
+      setMessage({
+        type: 'success',
+        text: res.message || 'Suara penentu GM Halim PK berhasil diterapkan!',
+      });
+      const ov = await electionService.getOverview();
+      setStages(ov.stages);
+    } catch (err: any) {
+      setMessage({
+        type: 'error',
+        text: err.response?.data?.message || 'Gagal menerapkan suara penentu GM.',
+      });
+    } finally {
+      setSubmittingGm(false);
+    }
+  };
+
+  const handleResetGmTieBreaker = async () => {
+    if (!selectedStageId) return;
+    if (!window.confirm('Apakah Anda yakin ingin membatalkan/reset suara penentu GM Halim PK?')) {
+      return;
+    }
+    setSubmittingGm(true);
+    try {
+      const res = await electionService.resetGmTieBreaker(selectedStageId);
+      setMessage({
+        type: 'success',
+        text: res.message || 'Suara penentu GM Halim PK berhasil direset.',
+      });
+      const ov = await electionService.getOverview();
+      setStages(ov.stages);
+    } catch (err: any) {
+      setMessage({
+        type: 'error',
+        text: err.response?.data?.message || 'Gagal mereset suara penentu GM.',
+      });
+    } finally {
+      setSubmittingGm(false);
+    }
+  };
+
+  const currentStage = stages.find((s) => s._id === selectedStageId);
+  const isStage2 = currentStage?.stageType === 'STAGE_2';
+  const targetVotes = currentStage?.targetVotes || (isStage2 ? 25 : 102);
+
   return (
     <div className="space-y-6 sm:space-y-8">
       {/* Page Header */}
@@ -358,7 +426,7 @@ export const AdminQuickCountPage: React.FC = () => {
                   Perolehan Suara Calon (Klik +1 untuk Tambah Langsung)
                 </label>
                 <span className="text-[10px] text-slate-400 font-bold">
-                  Target: 25 Pemilih
+                  Target: {targetVotes} Pemilih
                 </span>
               </div>
 
@@ -461,7 +529,10 @@ export const AdminQuickCountPage: React.FC = () => {
               <div>
                 <p className="text-slate-500 dark:text-slate-400 text-[11px]">Total Surat Suara Terhitung</p>
                 <p className="text-lg sm:text-xl font-black text-navy-900 dark:text-white mt-0.5">
-                  {totalSum} <span className="text-xs font-normal text-slate-400">/ 25 Suara ({Math.max(0, 25 - totalSum)} tersisa)</span>
+                  {totalSum}{' '}
+                  <span className="text-xs font-normal text-slate-400">
+                    / {targetVotes} Suara ({Math.max(0, targetVotes - totalSum)} tersisa)
+                  </span>
                 </p>
               </div>
               <div className="text-right text-[10px] sm:text-[11px] text-slate-400 shrink-0">
@@ -503,6 +574,104 @@ export const AdminQuickCountPage: React.FC = () => {
 
         {/* Status TPS & Reports Export (5 Cols) */}
         <div className="lg:col-span-5 space-y-4 sm:space-y-6">
+          {/* Hak 1 Suara Penentu GM Halim PK Card (Tahap 2 Definitif) */}
+          {isStage2 && (
+            <div className="bg-gradient-to-br from-white via-white to-amber-50/50 dark:from-navy-900 dark:via-navy-900 dark:to-navy-950 border-2 border-amber-500/40 dark:border-amber-500/50 rounded-3xl p-4 xs:p-5 sm:p-6 shadow-sm space-y-3 sm:space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-600 flex items-center justify-center font-bold text-sm">
+                    ⚖️
+                  </div>
+                  <h3 className="font-extrabold text-sm sm:text-base text-navy-900 dark:text-white">
+                    Suara Penentu GM Halim PK
+                  </h3>
+                </div>
+                {currentStage?.isTieBreakerActive && (
+                  <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 border border-emerald-500/30">
+                    SUDAH DIGUNAKAN
+                  </span>
+                )}
+              </div>
+
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                Sesuai Ketentuan Tahap 2: Jika kedua calon memperoleh suara sama imbang{' '}
+                <strong>(50% : 50%)</strong>, otomatis ada tambahan 1 suara penentu yang diambil oleh{' '}
+                <strong>General Manager Bandara Halim Perdanakusuma</strong>.
+              </p>
+
+              {currentStage?.isTieBreakerActive ? (
+                <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-800 dark:text-emerald-300 space-y-2">
+                  <p className="font-bold">
+                    ✓ Suara Penentu GM Halim telah diberikan kepada:{' '}
+                    <span className="text-navy-900 dark:text-white underline">
+                      {candidates.find((c) => c._id === currentStage.tieBreakerCandidateId)?.fullName ||
+                        'Calon Terpilih'}
+                    </span>
+                  </p>
+                  {currentStage.tieBreakerNotes && (
+                    <p className="text-[11px] opacity-80 italic">"{currentStage.tieBreakerNotes}"</p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleResetGmTieBreaker}
+                    disabled={submittingGm}
+                    className="text-xs font-bold text-rose-600 hover:text-rose-700 underline pt-1 block"
+                  >
+                    Reset / Batalkan Suara Penentu GM
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3 pt-1">
+                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase">
+                    Pilih Calon Penerima +1 Suara Penentu GM:
+                  </label>
+                  <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
+                    {candidates.map((cand) => (
+                      <label
+                        key={cand._id}
+                        className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-xs cursor-pointer transition-all ${
+                          selectedGmCandidateId === cand._id
+                            ? 'bg-amber-500/10 border-amber-500 font-bold text-navy-900 dark:text-white'
+                            : 'bg-slate-50 dark:bg-navy-800/60 border-slate-200 dark:border-navy-700 text-slate-600 dark:text-slate-300'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="gmCandidate"
+                          value={cand._id}
+                          checked={selectedGmCandidateId === cand._id}
+                          onChange={() => setSelectedGmCandidateId(cand._id)}
+                          className="text-amber-600 focus:ring-amber-500"
+                        />
+                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-200 dark:bg-navy-700 font-bold">
+                          No. {cand.candidateNumber}
+                        </span>
+                        <span className="truncate">{cand.fullName}</span>
+                      </label>
+                    ))}
+                  </div>
+
+                  <input
+                    type="text"
+                    placeholder="Catatan penetapan GM Halim PK (opsional)"
+                    value={gmNotes}
+                    onChange={(e) => setGmNotes(e.target.value)}
+                    className="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 dark:border-navy-700 bg-white dark:bg-navy-900"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={handleCastGmTieBreaker}
+                    disabled={!selectedGmCandidateId || submittingGm}
+                    className="w-full py-2.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white font-extrabold text-xs shadow-md shadow-amber-600/20 transition-all"
+                  >
+                    {submittingGm ? 'Menerapkan Suara...' : 'Terapkan 1 Suara Penentu GM Halim PK'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Export Report Card */}
           <div className="bg-white dark:bg-navy-900 border border-slate-200 dark:border-navy-800 rounded-3xl p-4 xs:p-5 sm:p-6 shadow-sm space-y-3 sm:space-y-4">
             <h3 className="font-extrabold text-sm sm:text-base text-navy-900 dark:text-white">
