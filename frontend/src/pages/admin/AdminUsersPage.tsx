@@ -25,6 +25,7 @@ export const AdminUsersPage: React.FC = () => {
   // Reset Password State
   const [resetModalUser, setResetModalUser] = useState<User | null>(null);
   const [resetting, setResetting] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
   const [copiedPassword, setCopiedPassword] = useState(false);
   const DEFAULT_RESET_PASSWORD = 'SekarpuraIndonesiaHlp2026!';
 
@@ -71,8 +72,10 @@ export const AdminUsersPage: React.FC = () => {
   };
 
   const handleToggleStatus = async (user: User) => {
+    const targetUserId = user.id || (user as any)._id;
+    if (!targetUserId) return;
     try {
-      await settingsService.toggleUserStatus(user.id);
+      await settingsService.toggleUserStatus(targetUserId);
       loadUsers();
     } catch (err: any) {
       setMessage({
@@ -84,21 +87,31 @@ export const AdminUsersPage: React.FC = () => {
 
   const handleResetPassword = async () => {
     if (!resetModalUser) return;
+    const targetUserId = resetModalUser.id || (resetModalUser as any)._id;
+    if (!targetUserId) {
+      setModalError('ID pengguna tidak valid.');
+      return;
+    }
+
     setResetting(true);
+    setModalError(null);
     setMessage(null);
 
     try {
-      const res = await settingsService.resetPassword(resetModalUser.id);
+      const res = await settingsService.resetPassword(targetUserId);
+      const defaultPass = res.data?.defaultPassword || DEFAULT_RESET_PASSWORD;
       setMessage({
         type: 'success',
-        text: `Kata sandi akun ${resetModalUser.name} (${resetModalUser.email}) berhasil di-reset menjadi "${res.data.defaultPassword}". Pengguna wajib mengganti sandi pada login berikutnya.`,
+        text: `Kata sandi akun ${resetModalUser.name} (${resetModalUser.email}) berhasil di-reset menjadi "${defaultPass}". Pengguna wajib mengganti sandi pada login berikutnya.`,
       });
       setResetModalUser(null);
       loadUsers();
     } catch (err: any) {
+      const errMsg = err.response?.data?.message || err.message || 'Gagal me-reset kata sandi pengguna.';
+      setModalError(errMsg);
       setMessage({
         type: 'error',
-        text: err.response?.data?.message || 'Gagal me-reset kata sandi pengguna.',
+        text: errMsg,
       });
     } finally {
       setResetting(false);
@@ -178,80 +191,89 @@ export const AdminUsersPage: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                users.map((u) => (
-                  <tr
-                    key={u.id}
-                    className="hover:bg-slate-50 dark:hover:bg-navy-800/40 transition-colors"
-                  >
-                    <td className="py-3.5 px-4">
-                      <div className="font-bold text-xs sm:text-sm text-navy-900 dark:text-white">
-                        {u.name}
-                      </div>
-                      {u.mustChangePassword && (
-                        <span className="inline-block mt-0.5 text-[10px] font-semibold text-amber-500 bg-amber-500/10 px-1.5 py-0.2 rounded">
-                          Wajib Ganti Password
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-3.5 px-4 text-xs text-slate-500 dark:text-slate-400">
-                      {u.email}
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <span
-                        className={`text-[11px] font-extrabold px-2.5 py-1 rounded-full border ${
-                          u.role === 'SUPER_ADMIN'
-                            ? 'bg-gold-500/15 text-gold-600 dark:text-gold-400 border-gold-500/30'
-                            : u.role === 'ADMIN'
-                            ? 'bg-electric-500/15 text-electric-600 dark:text-electric-400 border-electric-500/30'
-                            : 'bg-slate-100 dark:bg-navy-800 text-slate-500 border-slate-200 dark:border-navy-700'
-                        }`}
-                      >
-                        {u.role}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <span
-                        className={`text-xs font-bold inline-flex items-center gap-1.5 ${
-                          u.status === 'ACTIVE'
-                            ? 'text-emerald-600 dark:text-emerald-400'
-                            : 'text-rose-500'
-                        }`}
-                      >
-                        <span
-                          className={`w-1.5 h-1.5 rounded-full ${
-                            u.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-rose-500'
-                          }`}
-                        />
-                        <span>{u.status === 'ACTIVE' ? 'Aktif' : 'Dinonaktifkan'}</span>
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        {/* Reset Password Button (Super Admin Only) */}
-                        {isSuperAdmin && (
-                          <button
-                            onClick={() => setResetModalUser(u)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 transition-all shadow-sm"
-                            title="Reset Kata Sandi Akun ke Default"
-                          >
-                            <KeyRound className="w-3.5 h-3.5" />
-                            <span className="hidden sm:inline">Reset Password</span>
-                          </button>
-                        )}
+                users.map((u) => {
+                  const userId = u.id || (u as any)._id;
+                  const currentId = currentUser?.id || (currentUser as any)?._id;
+                  const isSelf = userId === currentId;
 
-                        {/* Toggle Status Button */}
-                        {isSuperAdmin && u.id !== currentUser?.id && (
-                          <button
-                            onClick={() => handleToggleStatus(u)}
-                            className="px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-navy-700 hover:bg-slate-100 dark:hover:bg-navy-800 transition-colors"
-                          >
-                            {u.status === 'ACTIVE' ? 'Nonaktifkan' : 'Aktifkan'}
-                          </button>
+                  return (
+                    <tr
+                      key={userId}
+                      className="hover:bg-slate-50 dark:hover:bg-navy-800/40 transition-colors"
+                    >
+                      <td className="py-3.5 px-4">
+                        <div className="font-bold text-xs sm:text-sm text-navy-900 dark:text-white">
+                          {u.name}
+                        </div>
+                        {u.mustChangePassword && (
+                          <span className="inline-block mt-0.5 text-[10px] font-semibold text-amber-500 bg-amber-500/10 px-1.5 py-0.2 rounded">
+                            Wajib Ganti Password
+                          </span>
                         )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                      <td className="py-3.5 px-4 text-xs text-slate-500 dark:text-slate-400">
+                        {u.email}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <span
+                          className={`text-[11px] font-extrabold px-2.5 py-1 rounded-full border ${
+                            u.role === 'SUPER_ADMIN'
+                              ? 'bg-gold-500/15 text-gold-600 dark:text-gold-400 border-gold-500/30'
+                              : u.role === 'ADMIN'
+                              ? 'bg-electric-500/15 text-electric-600 dark:text-electric-400 border-electric-500/30'
+                              : 'bg-slate-100 dark:bg-navy-800 text-slate-500 border-slate-200 dark:border-navy-700'
+                          }`}
+                        >
+                          {u.role}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <span
+                          className={`text-xs font-bold inline-flex items-center gap-1.5 ${
+                            u.status === 'ACTIVE'
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : 'text-rose-500'
+                          }`}
+                        >
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              u.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-rose-500'
+                            }`}
+                          />
+                          <span>{u.status === 'ACTIVE' ? 'Aktif' : 'Dinonaktifkan'}</span>
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          {/* Reset Password Button (Super Admin Only) */}
+                          {isSuperAdmin && (
+                            <button
+                              onClick={() => {
+                                setModalError(null);
+                                setResetModalUser(u);
+                              }}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 transition-all shadow-sm"
+                              title="Reset Kata Sandi Akun ke Default"
+                            >
+                              <KeyRound className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">Reset Password</span>
+                            </button>
+                          )}
+
+                          {/* Toggle Status Button */}
+                          {isSuperAdmin && !isSelf && (
+                            <button
+                              onClick={() => handleToggleStatus(u)}
+                              className="px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-navy-700 hover:bg-slate-100 dark:hover:bg-navy-800 transition-colors"
+                            >
+                              {u.status === 'ACTIVE' ? 'Nonaktifkan' : 'Aktifkan'}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -324,6 +346,13 @@ export const AdminUsersPage: React.FC = () => {
                   Setelah di-reset, kata sandi lama akun ini tidak lagi berlaku. Pengguna wajib mengganti kata sandi pada saat pertama kali login.
                 </p>
               </div>
+
+              {modalError && (
+                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 text-xs flex items-center gap-2 animate-in fade-in">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{modalError}</span>
+                </div>
+              )}
             </div>
 
             <div className="pt-2 flex items-center justify-end gap-2.5">

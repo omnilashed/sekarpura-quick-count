@@ -39,13 +39,15 @@ export const settingsService = {
   },
 
   async toggleUserStatus(id: string) {
+    const cleanId = id || '';
     const res = await api.patch<{ success: boolean; message: string; data: any }>(
-      `/users/${id}/toggle-status`
+      `/users/${cleanId}/toggle-status`
     );
     return res.data;
   },
 
   async resetPassword(id: string) {
+    const cleanId = id || '';
     const res = await api.post<{
       success: boolean;
       message: string;
@@ -56,7 +58,7 @@ export const settingsService = {
         defaultPassword: string;
         mustChangePassword: boolean;
       };
-    }>(`/users/${id}/reset-password`);
+    }>(`/users/${cleanId}/reset-password`);
     return res.data;
   },
 };
