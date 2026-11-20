@@ -83,7 +83,7 @@ export class QuickCountController {
     const sources = await VoteSource.find({ stageId })
       .populate({
         path: 'activeSubmissionId',
-        select: 'votes invalidVotes totalVotes revision verificationStatus createdAt submittedBy',
+        select: 'votes invalidVotes totalVotes revision verificationStatus isFinalSaved createdAt submittedBy',
         populate: { path: 'submittedBy', select: 'name email' },
       })
       .sort({ sourceCode: 1 });
@@ -188,22 +188,8 @@ export class QuickCountController {
     const targetRound =
       req.body.round !== undefined ? Number(req.body.round) : (stage.activeRound || 1);
 
-    // Integrity check: Check if submission already exists for this round
-    const existingSubmission = await VoteSubmission.findOne({
-      stageId: stage._id,
-      sourceId: source._id,
-      round: targetRound,
-      isLatestRevision: true,
-    });
-
-    if (existingSubmission) {
-      res.status(409).json({
-        success: false,
-        message:
-          `Data suara Putaran ${targetRound} untuk sumber ini sudah pernah dimasukkan. Gunakan fitur Koreksi Suara dengan mencantumkan alasan revisi.`,
-      });
-      return;
-    }
+    const roundQuery: any =
+      targetRound === 1 ? { $or: [{ round: 1 }, { round: { $exists: false } }] } : { round: targetRound };
 
     // Total verification: candidate sum + invalidVotes == totalVotes
     const sumCandidateVotes = validated.votes.reduce((acc, curr) => acc + curr.count, 0);
@@ -217,30 +203,103 @@ export class QuickCountController {
       return;
     }
 
-    // Create VoteSubmission
-    const submission = new VoteSubmission({
-      electionId: stage.electionId,
+    // Check if submission already exists for this round
+    const existingSubmission = await VoteSubmission.findOne({
       stageId: stage._id,
       sourceId: source._id,
-      round: targetRound,
-      votes: validated.votes.map((v) => ({
+      ...roundQuery,
+      isLatestRevision: true,
+    }).sort({ revision: -1, createdAt: -1 });
+
+    let submission: any;
+    let isRevision = false;
+
+    if (existingSubmission && existingSubmission.isFinalSaved) {
+      // Data TPS Putaran ini SUDAH PERNAH DISAVE RESMI sebelumnya.
+      // Sesuai aturan tata tertib: jika ada "save ulang", maka wajib mencantumkan alasan revisi!
+      const reason = validated.correctionReason?.trim();
+      if (!reason || reason.length === 0) {
+        res.status(409).json({
+          success: false,
+          needsCorrectionReason: true,
+          message: `Data suara Putaran ${targetRound} untuk TPS ini sudah pernah dimasukkan / disimpan secara resmi. Untuk menyimpan perubahan/save ulang, silakan cantumkan Alasan Revisi / Koreksi Suara.`,
+        });
+        return;
+      }
+
+      // Arsipkan submission lama
+      existingSubmission.isLatestRevision = false;
+      await existingSubmission.save();
+
+      // Buat revisi baru
+      submission = new VoteSubmission({
+        electionId: stage.electionId,
+        stageId: stage._id,
+        sourceId: source._id,
+        round: targetRound,
+        votes: validated.votes.map((v) => ({
+          candidateId: new mongoose.Types.ObjectId(v.candidateId),
+          candidateNumber: v.candidateNumber,
+          count: v.count,
+        })),
+        invalidVotes: validated.invalidVotes,
+        totalVotes: validated.totalVotes,
+        revision: (existingSubmission.revision || 1) + 1,
+        isLatestRevision: true,
+        isFinalSaved: true,
+        verificationStatus: 'VERIFIED',
+        submittedBy: req.user?.id,
+        verifiedBy: req.user?.id,
+        verifiedAt: new Date(),
+        notes: validated.notes,
+        correctionReason: reason,
+        idempotencyKey: validated.idempotencyKey,
+      });
+      await submission.save();
+      isRevision = true;
+    } else if (existingSubmission) {
+      // Submission berasal dari Live Tally yang belum di-save resmi -> Simpan dan finalisasi!
+      existingSubmission.votes = validated.votes.map((v) => ({
         candidateId: new mongoose.Types.ObjectId(v.candidateId),
         candidateNumber: v.candidateNumber,
         count: v.count,
-      })),
-      invalidVotes: validated.invalidVotes,
-      totalVotes: validated.totalVotes,
-      revision: 1,
-      isLatestRevision: true,
-      verificationStatus: 'VERIFIED',
-      submittedBy: req.user?.id,
-      verifiedBy: req.user?.id,
-      verifiedAt: new Date(),
-      notes: validated.notes,
-      idempotencyKey: validated.idempotencyKey,
-    });
-
-    await submission.save();
+      }));
+      existingSubmission.invalidVotes = validated.invalidVotes;
+      existingSubmission.totalVotes = validated.totalVotes;
+      existingSubmission.round = targetRound;
+      existingSubmission.isFinalSaved = true;
+      existingSubmission.verificationStatus = 'VERIFIED';
+      existingSubmission.verifiedBy = req.user?.id;
+      existingSubmission.verifiedAt = new Date();
+      if (validated.notes) existingSubmission.notes = validated.notes;
+      await existingSubmission.save();
+      submission = existingSubmission;
+    } else {
+      // Belum ada submission sama sekali -> Simpan baru dan finalisasi
+      submission = new VoteSubmission({
+        electionId: stage.electionId,
+        stageId: stage._id,
+        sourceId: source._id,
+        round: targetRound,
+        votes: validated.votes.map((v) => ({
+          candidateId: new mongoose.Types.ObjectId(v.candidateId),
+          candidateNumber: v.candidateNumber,
+          count: v.count,
+        })),
+        invalidVotes: validated.invalidVotes,
+        totalVotes: validated.totalVotes,
+        revision: 1,
+        isLatestRevision: true,
+        isFinalSaved: true,
+        verificationStatus: 'VERIFIED',
+        submittedBy: req.user?.id,
+        verifiedBy: req.user?.id,
+        verifiedAt: new Date(),
+        notes: validated.notes,
+        idempotencyKey: validated.idempotencyKey,
+      });
+      await submission.save();
+    }
 
     // Update source status
     source.status = 'VERIFIED';
@@ -261,7 +320,9 @@ export class QuickCountController {
       stageId: stage._id.toString(),
       quickcountData,
       leaderChanged: quickcountData.leaderChanged,
-      message: `Data suara baru dari ${source.sourceCode} (${source.sourceName}) berhasil diverifikasi.`,
+      message: isRevision
+        ? `Koreksi data suara (${source.sourceName}) Revisi #${submission.revision} berhasil disimpan.`
+        : `Data suara Putaran ${targetRound} dari ${source.sourceName} resmi disimpan & diverifikasi.`,
     });
 
     broadcastSourceVerified({
@@ -277,21 +338,28 @@ export class QuickCountController {
       actorId: req.user?.id,
       actorName: req.user?.name || 'Admin',
       actorRole: req.user?.role || 'ADMIN',
-      action: 'VOTE_SUBMITTED',
+      action: isRevision ? 'VOTE_CORRECTION_SUBMITTED' : 'VOTE_SUBMITTED',
       entityType: 'VoteSubmission',
       entityId: submission._id.toString(),
       after: {
         sourceCode: source.sourceCode,
+        round: targetRound,
+        revision: submission.revision,
         totalVotes: submission.totalVotes,
         validVotes: sumCandidateVotes,
         invalidVotes: submission.invalidVotes,
+        isFinalSaved: true,
       },
-      reason: validated.notes || `Input suara resmi rekapitulasi ${source.sourceCode}`,
+      reason: isRevision
+        ? validated.correctionReason
+        : validated.notes || `Input suara resmi rekapitulasi Putaran ${targetRound} ${source.sourceCode}`,
     });
 
-    res.status(201).json({
+    res.status(isRevision ? 200 : 201).json({
       success: true,
-      message: `Data suara dari ${source.sourceName} berhasil disimpan dan disiarkan secara real-time.`,
+      message: isRevision
+        ? `Koreksi data suara Putaran ${targetRound} (Revisi #${submission.revision}) berhasil disimpan!`
+        : `Data suara Putaran ${targetRound} dari ${source.sourceName} berhasil disimpan resmi ke database!`,
       submission,
       quickcount: quickcountData,
     });
@@ -591,26 +659,29 @@ export class QuickCountController {
     }
 
     const targetRound = round !== undefined ? Number(round) : (stage.activeRound || 1);
+    const roundQuery: any =
+      targetRound === 1 ? { $or: [{ round: 1 }, { round: { $exists: false } }] } : { round: targetRound };
 
     // Find existing latest submission for this round or initialize one
     let submission = await VoteSubmission.findOne({
       stageId: stage._id,
       sourceId: source._id,
-      round: targetRound,
+      ...roundQuery,
       isLatestRevision: true,
-    });
+    }).sort({ revision: -1, createdAt: -1 });
+
+    const candidateListIds =
+      stage.stageType === 'STAGE_2' &&
+      targetRound === 2 &&
+      stage.round2CandidateIds &&
+      stage.round2CandidateIds.length > 0
+        ? stage.round2CandidateIds
+        : stage.candidateIds;
+
+    const stageCandidates = await Candidate.find({ _id: { $in: candidateListIds } });
 
     if (!submission) {
-      const candidateListIds =
-        stage.stageType === 'STAGE_2' &&
-        targetRound === 2 &&
-        stage.round2CandidateIds &&
-        stage.round2CandidateIds.length > 0
-          ? stage.round2CandidateIds
-          : stage.candidateIds;
-
-      const candidates = await Candidate.find({ _id: { $in: candidateListIds } });
-      const initialVotes = candidates.map((c) => ({
+      const initialVotes = stageCandidates.map((c) => ({
         candidateId: c._id,
         candidateNumber: c.candidateNumber,
         count: 0,
@@ -626,12 +697,28 @@ export class QuickCountController {
         totalVotes: 0,
         revision: 1,
         isLatestRevision: true,
+        isFinalSaved: false,
         verificationStatus: 'VERIFIED',
         submittedBy: req.user?.id,
         verifiedBy: req.user?.id,
         verifiedAt: new Date(),
         notes: `Live Tally Mode (Penghitungan Putaran ${targetRound})`,
       });
+    } else {
+      submission.round = targetRound;
+      // Ensure all candidates for this round exist in submission.votes
+      for (const cand of stageCandidates) {
+        const hasCand = submission.votes.some(
+          (v) => v.candidateId.toString() === cand._id.toString()
+        );
+        if (!hasCand) {
+          submission.votes.push({
+            candidateId: cand._id,
+            candidateNumber: cand.candidateNumber,
+            count: 0,
+          });
+        }
+      }
     }
 
     // Apply incremental or bulk update

@@ -188,6 +188,11 @@ export const AdminQuickCountPage: React.FC = () => {
   const validSum = Object.values(voteInputs).reduce((acc, curr) => acc + (Number(curr) || 0), 0);
   const totalSum = validSum + (Number(invalidVotes) || 0);
 
+  const selectedSource = sources.find((s) => s._id === selectedSourceId);
+  const isSourceFinalSaved =
+    Boolean(selectedRound === 1 ? stageQuickCount?.isRound1Saved : stageQuickCount?.isRound2Saved) ||
+    Boolean((selectedSource?.activeSubmissionId as any)?.isFinalSaved);
+
   // Quick live tally (+1 / -1 per surat suara tanpa syarat simpan atau alasan revisi)
   const handleQuickTally = async (candidateId: string | null, delta: number, isInvalid = false) => {
     if (!selectedSourceId || !selectedStageId) {
@@ -241,6 +246,15 @@ export const AdminQuickCountPage: React.FC = () => {
       return;
     }
 
+    // Jika TPS sudah pernah disimpan resmi, revisi/save ulang WAJIB mengisi alasan koreksi
+    if (isSourceFinalSaved && (!correctionReason || correctionReason.trim().length < 5)) {
+      setMessage({
+        type: 'error',
+        text: `Data suara Putaran ${selectedRound} untuk TPS ini sudah pernah disimpan secara resmi. Cantumkan Alasan Revisi / Koreksi Suara (minimal 5 karakter) untuk menyimpan ulang (save ulang).`,
+      });
+      return;
+    }
+
     setSubmitting(true);
     setMessage(null);
 
@@ -251,25 +265,31 @@ export const AdminQuickCountPage: React.FC = () => {
     }));
 
     try {
-      // Use liveTally directly: updates or creates with round
-      const res = await quickcountService.liveTally({
+      // Simpan resmi rekapitulasi ke database
+      const res = await quickcountService.submitVotes({
         stageId: selectedStageId,
         sourceId: selectedSourceId,
         votes: voteItems,
         invalidVotes: Number(invalidVotes) || 0,
+        totalVotes: totalSum,
+        notes: notes.trim() || undefined,
         round: selectedRound,
+        correctionReason: isSourceFinalSaved ? correctionReason.trim() : undefined,
       });
 
       setMessage({
         type: 'success',
-        text: `Data suara Putaran ${selectedRound} (${res.submission.totalVotes} suara) berhasil disimpan ke database & disiarkan real-time!`,
+        text: isSourceFinalSaved
+          ? `Koreksi/revisi suara Putaran ${selectedRound} (${res.submission?.totalVotes || totalSum} suara) berhasil disimpan dan diaudit!`
+          : `Hasil Rekapitulasi TPS Putaran ${selectedRound} (${res.submission?.totalVotes || totalSum} suara) berhasil disimpan secara resmi ke database!`,
       });
+      setCorrectionReason('');
 
       await loadStageData(selectedStageId, stages, selectedRound);
     } catch (err: any) {
       setMessage({
         type: 'error',
-        text: err.response?.data?.message || 'Gagal menyimpan data suara.',
+        text: err.response?.data?.message || 'Gagal menyimpan data suara resmi.',
       });
     } finally {
       setSubmitting(false);
@@ -608,17 +628,23 @@ export const AdminQuickCountPage: React.FC = () => {
               </div>
 
               {/* Action Button: Advance to Round 2 */}
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 shrink-0">
                 {totalSum >= targetVotes && !stageQuickCount?.schemaRules?.stage2Definitive?.skema1?.hasWinner50Plus1 && (
-                  <button
-                    type="button"
-                    onClick={handleAdvanceRound2}
-                    disabled={processingRoundAction}
-                    className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-navy-950 font-black text-xs shadow-md shadow-amber-500/20 transition-all flex items-center gap-2 disabled:opacity-50"
-                  >
-                    <span>Lanjut ke Putaran 2 (Skema 2: Head-to-Head)</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
+                  isSourceFinalSaved ? (
+                    <button
+                      type="button"
+                      onClick={handleAdvanceRound2}
+                      disabled={processingRoundAction}
+                      className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-navy-950 font-black text-xs shadow-md shadow-amber-500/20 transition-all flex items-center gap-2 disabled:opacity-50"
+                    >
+                      <span>👉 Lanjut ke Putaran 2 (Skema 2: Head-to-Head)</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  ) : (
+                    <span className="text-[11px] font-bold text-amber-800 dark:text-amber-300 bg-amber-500/15 border border-amber-500/30 px-3 py-2 rounded-xl">
+                      ⚠️ Simpan hasil rekap TPS di formulir bawah untuk meresmikan Putaran 1 & membuka Putaran 2
+                    </span>
+                  )
                 )}
                 {currentStage?.round1Completed && (
                   <button
@@ -664,15 +690,21 @@ export const AdminQuickCountPage: React.FC = () => {
                 </button>
 
                 {!currentStage?.round2Completed && (
-                  <button
-                    type="button"
-                    onClick={handleFinalizeRound2}
-                    disabled={processingRoundAction || totalSum < targetVotes}
-                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-md shadow-emerald-600/20 transition-all flex items-center gap-1.5 disabled:opacity-40"
-                  >
-                    <Trophy className="w-3.5 h-3.5" />
-                    <span>Tetapkan Pemenang Definitif</span>
-                  </button>
+                  totalSum >= targetVotes && !isSourceFinalSaved ? (
+                    <span className="text-[11px] font-bold text-amber-800 dark:text-amber-300 bg-amber-500/15 border border-amber-500/30 px-3 py-2 rounded-xl">
+                      ⚠️ Simpan hasil rekap Putaran 2 di bawah untuk menetapkan pemenang definitif
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleFinalizeRound2}
+                      disabled={processingRoundAction || totalSum < targetVotes || !isSourceFinalSaved}
+                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-md shadow-emerald-600/20 transition-all flex items-center gap-1.5 disabled:opacity-40"
+                    >
+                      <Trophy className="w-3.5 h-3.5" />
+                      <span>Tetapkan Pemenang Definitif</span>
+                    </button>
+                  )
                 )}
               </div>
             </div>
@@ -877,17 +909,54 @@ export const AdminQuickCountPage: React.FC = () => {
               />
             </div>
 
+            {/* Revision Callout & Mandatory Reason (Only when already officially saved) */}
+            {isSourceFinalSaved && (
+              <div className="space-y-3 p-4 rounded-2xl bg-amber-500/10 border-2 border-amber-500/30 text-amber-950 dark:text-amber-200">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <p className="font-bold text-xs sm:text-sm">
+                    Status TPS: Rekapitulasi Putaran {selectedRound} Sudah Pernah Disimpan Resmi
+                  </p>
+                </div>
+                <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                  Menyimpan perubahan ulang (save ulang) akan dicatat sebagai <strong>Revisi Resmi</strong> baru dalam audit trail. Wajib mengisi alasan koreksi/revisi di bawah ini:
+                </p>
+                <div>
+                  <label className="block text-[11px] font-extrabold uppercase tracking-wider mb-1 text-amber-800 dark:text-amber-300">
+                    Alasan Revisi / Koreksi Suara (Wajib Diisi) *
+                  </label>
+                  <textarea
+                    rows={2}
+                    required
+                    value={correctionReason}
+                    onChange={(e) => setCorrectionReason(e.target.value)}
+                    placeholder="Contoh: Koreksi hitung surat suara calon nomor 3 setelah verifikasi ulang bersama saksi forum..."
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-white dark:bg-navy-900 border border-amber-500/40 text-xs text-navy-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={submitting || !selectedSourceId}
-              className="w-full py-3 sm:py-3.5 rounded-2xl font-bold text-xs sm:text-sm text-white shadow-lg bg-electric-600 hover:bg-electric-500 shadow-electric-600/20 transition-all disabled:opacity-50 min-h-[44px] flex items-center justify-center gap-2"
+              className={`w-full py-3 sm:py-3.5 rounded-2xl font-bold text-xs sm:text-sm text-white shadow-lg transition-all disabled:opacity-50 min-h-[44px] flex items-center justify-center gap-2 ${
+                isSourceFinalSaved
+                  ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-600/20'
+                  : 'bg-electric-600 hover:bg-electric-500 shadow-electric-600/20'
+              }`}
             >
               {submitting ? (
-                'Menyinkronkan...'
+                'Menyimpan Data...'
+              ) : isSourceFinalSaved ? (
+                <>
+                  <Sparkles className="w-4 h-4" />
+                  <span>📝 Simpan Koreksi / Revisi Resmi Suara Putaran {selectedRound}</span>
+                </>
               ) : (
                 <>
-                  <Zap className="w-4 h-4" />
-                  <span>Simpan & Sinkronkan Semua Angka (Kirim Realtime)</span>
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>💾 Simpan & Kunci Hasil Rekapitulasi TPS Putaran {selectedRound} (Resmi)</span>
                 </>
               )}
             </button>

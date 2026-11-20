@@ -85,6 +85,7 @@ export const submitVotesSchema = z.object({
   votes: z.array(voteItemSchema),
   invalidVotes: z.number().int().min(0, 'Suara tidak sah tidak boleh negatif').default(0),
   totalVotes: z.number().int().min(0),
+  round: z.number().int().optional(),
   notes: z.string().optional(),
   correctionReason: z.string().optional(),
   idempotencyKey: z.string().optional(),

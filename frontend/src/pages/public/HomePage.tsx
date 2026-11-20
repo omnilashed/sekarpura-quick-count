@@ -20,13 +20,15 @@ import { CandidateCard } from '../../components/candidate/CandidateCard';
 import { MuscabThemeSection } from '../../components/home/MuscabThemeSection';
 
 export const HomePage: React.FC = () => {
-  const { data, isLoading, fetchQuickCount, initSocket } = useQuickcountStore();
+  const { data, isLoading, fetchQuickCount, initSocket, startAutoRefresh, stopAutoRefresh } =
+    useQuickcountStore();
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [, setLoadingCandidates] = useState(true);
 
   useEffect(() => {
     fetchQuickCount();
     initSocket();
+    startAutoRefresh();
 
     // Fetch featured candidates
     candidateService
@@ -36,6 +38,10 @@ export const HomePage: React.FC = () => {
       })
       .catch((err) => console.error(err))
       .finally(() => setLoadingCandidates(false));
+
+    return () => {
+      stopAutoRefresh();
+    };
   }, []);
 
   return (

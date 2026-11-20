@@ -12,7 +12,8 @@ import { HistoricalTrendChart } from '../../components/quickcount/HistoricalTren
 import { LiveUpdatesFeed } from '../../components/quickcount/LiveUpdatesFeed';
 
 export const LiveQuickCountPage: React.FC = () => {
-  const { data, isLoading, fetchQuickCount, setSelectedStageId } = useQuickcountStore();
+  const { data, isLoading, fetchQuickCount, setSelectedStageId, initSocket, startAutoRefresh, stopAutoRefresh } =
+    useQuickcountStore();
   const [stages, setStages] = useState<ElectionStage[]>([]);
 
   useEffect(() => {
@@ -24,6 +25,12 @@ export const LiveQuickCountPage: React.FC = () => {
       .catch((err) => console.error(err));
 
     fetchQuickCount();
+    initSocket();
+    startAutoRefresh();
+
+    return () => {
+      stopAutoRefresh();
+    };
   }, []);
 
   return (

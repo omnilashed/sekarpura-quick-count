@@ -117,6 +117,9 @@ export interface StageSchemaRules {
   currentRound?: number;
   round1Completed?: boolean;
   round2Completed?: boolean;
+  isRound1Saved?: boolean;
+  isRound2Saved?: boolean;
+  isCurrentRoundSaved?: boolean;
   round1Summary?: {
     totalVotesIn: number;
     validVotes: number;
@@ -203,6 +206,9 @@ export interface QuickCountData {
   currentRound?: number;
   round1Completed?: boolean;
   round2Completed?: boolean;
+  isRound1Saved?: boolean;
+  isRound2Saved?: boolean;
+  isCurrentRoundSaved?: boolean;
   rankings: CandidateRanking[];
   top5: CandidateRanking[];
   leaderChanged: boolean;

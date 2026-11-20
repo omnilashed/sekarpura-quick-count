@@ -30,6 +30,9 @@ export interface StageSchemaRules {
   currentRound: number;
   round1Completed: boolean;
   round2Completed: boolean;
+  isRound1Saved?: boolean;
+  isRound2Saved?: boolean;
+  isCurrentRoundSaved?: boolean;
   round1Summary?: {
     totalVotesIn: number;
     validVotes: number;
@@ -120,6 +123,9 @@ export interface QuickCountResult {
   currentRound: number;
   round1Completed: boolean;
   round2Completed: boolean;
+  isRound1Saved?: boolean;
+  isRound2Saved?: boolean;
+  isCurrentRoundSaved?: boolean;
   rankings: CandidateRanking[];
   top5: CandidateRanking[];
   leaderChanged: boolean;
@@ -446,6 +452,27 @@ export class QuickCountService {
       }
     }
 
+    // Cek apakah data pada putaran ini sudah di-save secara resmi
+    const isCurrentRoundSaved = submissions.some((s) => s.isFinalSaved === true);
+
+    const r1FinalSavedSub = await VoteSubmission.findOne({
+      stageId: stage._id,
+      verificationStatus: 'VERIFIED',
+      isLatestRevision: true,
+      isFinalSaved: true,
+      $or: [{ round: 1 }, { round: { $exists: false } }],
+    });
+    const isRound1Saved = Boolean(r1FinalSavedSub);
+
+    const r2FinalSavedSub = await VoteSubmission.findOne({
+      stageId: stage._id,
+      verificationStatus: 'VERIFIED',
+      isLatestRevision: true,
+      isFinalSaved: true,
+      round: 2,
+    });
+    const isRound2Saved = Boolean(r2FinalSavedSub);
+
     const schemaRules: StageSchemaRules = {
       stageType: stage.stageType,
       targetVotes,
@@ -454,6 +481,9 @@ export class QuickCountService {
       currentRound: effectiveRound,
       round1Completed: stage.round1Completed || false,
       round2Completed: stage.round2Completed || false,
+      isRound1Saved,
+      isRound2Saved,
+      isCurrentRoundSaved,
       round1Summary,
       stage2Definitive: {
         activeSchema: effectiveRound === 1 ? 'SKEMA_1' : 'SKEMA_2',
@@ -567,6 +597,9 @@ export class QuickCountService {
       currentRound: effectiveRound,
       round1Completed: stage.round1Completed || false,
       round2Completed: stage.round2Completed || false,
+      isRound1Saved,
+      isRound2Saved,
+      isCurrentRoundSaved,
       rankings,
       top5,
       leaderChanged,

@@ -18,6 +18,7 @@ export interface IVoteSubmission extends Document {
   round: number;
   revision: number;
   isLatestRevision: boolean;
+  isFinalSaved?: boolean;
   verificationStatus: SubmissionVerificationStatus;
   submittedBy: mongoose.Types.ObjectId;
   verifiedBy?: mongoose.Types.ObjectId;
@@ -47,6 +48,7 @@ const VoteSubmissionSchema = new Schema<IVoteSubmission>(
     round: { type: Number, default: 1, min: 1, max: 2, index: true },
     revision: { type: Number, default: 1 },
     isLatestRevision: { type: Boolean, default: true, index: true },
+    isFinalSaved: { type: Boolean, default: false, index: true },
     verificationStatus: {
       type: String,
       enum: ['DRAFT', 'VERIFIED', 'REJECTED'],

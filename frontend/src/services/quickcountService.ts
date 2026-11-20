@@ -63,8 +63,14 @@ export const quickcountService = {
     totalVotes: number;
     round?: number;
     notes?: string;
+    correctionReason?: string;
   }) {
-    const res = await api.post<{ success: boolean; message: string; quickcount: QuickCountData }>(
+    const res = await api.post<{
+      success: boolean;
+      message: string;
+      quickcount: QuickCountData;
+      submission?: any;
+    }>(
       '/quickcount/submit-votes',
       payload
     );

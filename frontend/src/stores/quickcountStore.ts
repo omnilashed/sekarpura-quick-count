@@ -13,12 +13,16 @@ interface QuickCountState {
   selectedStageId: string | null;
   leaderChangeAlert: { leaderName: string; candidateNumber: number } | null;
   socket: Socket | null;
-  fetchQuickCount: (stageId?: string) => Promise<void>;
+  fetchQuickCount: (stageId?: string, silent?: boolean) => Promise<void>;
   setSelectedStageId: (stageId: string) => void;
   initSocket: () => void;
   disconnectSocket: () => void;
+  startAutoRefresh: () => void;
+  stopAutoRefresh: () => void;
   clearLeaderAlert: () => void;
 }
+
+let autoRefreshTimer: any = null;
 
 export const useQuickcountStore = create<QuickCountState>((set, get) => ({
   data: null,
@@ -29,9 +33,9 @@ export const useQuickcountStore = create<QuickCountState>((set, get) => ({
   leaderChangeAlert: null,
   socket: null,
 
-  fetchQuickCount: async (stageId?: string) => {
+  fetchQuickCount: async (stageId?: string, silent = false) => {
     try {
-      set({ isLoading: true });
+      if (!silent) set({ isLoading: true });
       const targetId = stageId || get().selectedStageId || undefined;
       const data = await quickcountService.getQuickCount(targetId);
       set({
@@ -42,7 +46,22 @@ export const useQuickcountStore = create<QuickCountState>((set, get) => ({
       });
     } catch (err) {
       console.error('[QuickCount Store] Fetch error:', err);
-      set({ isLoading: false });
+      if (!silent) set({ isLoading: false });
+    }
+  },
+
+  startAutoRefresh: () => {
+    if (autoRefreshTimer) return;
+    // Silent background sync every 2.5s as resilient real-time backup to WebSocket
+    autoRefreshTimer = setInterval(() => {
+      get().fetchQuickCount(undefined, true);
+    }, 2500);
+  },
+
+  stopAutoRefresh: () => {
+    if (autoRefreshTimer) {
+      clearInterval(autoRefreshTimer);
+      autoRefreshTimer = null;
     }
   },
 
