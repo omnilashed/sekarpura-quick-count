@@ -11,7 +11,7 @@
     "seed": "tsx src/seeds/seed.ts",
     "clean": "tsx src/seeds/clean.ts",
     "import:real": "tsx src/seeds/inputRealCandidates.ts",
-    "test": "vitest run",
+    "test": "vitest run --fileParallelism=false",
     "migrate:atlas": "tsx src/seeds/migrateToAtlas.ts",
     "migrate:gridfs": "tsx src/seeds/migratePresentationsToGridFS.ts"
   },

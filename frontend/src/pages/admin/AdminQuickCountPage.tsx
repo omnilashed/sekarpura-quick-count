@@ -54,6 +54,7 @@ export const AdminQuickCountPage: React.FC = () => {
   const [processingRoundAction, setProcessingRoundAction] = useState<boolean>(false);
   const [resettingSourceId, setResettingSourceId] = useState<string | null>(null);
   const [resettingAll, setResettingAll] = useState<boolean>(false);
+  const [exportingFormat, setExportingFormat] = useState<'pdf' | 'xlsx' | 'csv' | null>(null);
 
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [tallyFeedback, setTallyFeedback] = useState<string | null>(null);
@@ -624,6 +625,28 @@ export const AdminQuickCountPage: React.FC = () => {
       });
     } finally {
       setSubmittingGm(false);
+    }
+  };
+
+  const handleDownloadReport = async (format: 'pdf' | 'xlsx' | 'csv') => {
+    if (!selectedStageId) return;
+    try {
+      setExportingFormat(format);
+      await quickcountService.downloadReport(selectedStageId, format, selectedRound);
+      setMessage({
+        type: 'success',
+        text: `Dokumen rekapitulasi ${format.toUpperCase()} resmi (Putaran 1 & Putaran 2) berhasil diunduh.`,
+      });
+    } catch (err: any) {
+      console.error('Failed to export report:', err);
+      setMessage({
+        type: 'error',
+        text:
+          'Gagal mengunduh berkas rekapitulasi: ' +
+          (err.response?.data?.message || err.message || 'Kesalahan server'),
+      });
+    } finally {
+      setExportingFormat(null);
     }
   };
 
@@ -1260,34 +1283,67 @@ export const AdminQuickCountPage: React.FC = () => {
 
           {/* Export Report Card */}
           <div className="bg-white dark:bg-navy-900 border border-slate-200 dark:border-navy-800 rounded-3xl p-4 xs:p-5 sm:p-6 shadow-sm space-y-3 sm:space-y-4">
-            <h3 className="font-extrabold text-sm sm:text-base text-navy-900 dark:text-white">
-              Ekspor Rekapitulasi Resmi
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Unduh rekapitulasi data suara tahap ini dalam format dokumen resmi
-            </p>
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <h3 className="font-extrabold text-sm sm:text-base text-navy-900 dark:text-white flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-emerald-500" />
+                  Ekspor Rekapitulasi Resmi
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Unduh berita acara & rekapitulasi data suara lengkap seluruh putaran dalam format dokumen resmi.
+                </p>
+              </div>
+            </div>
+
+            <div className="px-3 py-2 bg-slate-50 dark:bg-navy-950/60 rounded-xl border border-slate-200/80 dark:border-navy-800 text-[11px] text-slate-600 dark:text-slate-300 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+              <span>
+                Dokumen mencakup data komprehensif <strong>Putaran 1</strong>, <strong>Putaran 2</strong>, penetapan ketua definitif, matriks TPS, dan tanda tangan saksi/panitia.
+              </span>
+            </div>
 
             <div className="grid grid-cols-3 gap-2 pt-1 sm:pt-2">
               <button
-                onClick={() => quickcountService.downloadReport(selectedStageId, 'pdf')}
-                className="flex items-center justify-center gap-1.5 p-2.5 sm:p-3 rounded-2xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 font-bold text-xs transition-colors min-h-[42px]"
+                type="button"
+                disabled={exportingFormat !== null}
+                onClick={() => handleDownloadReport('pdf')}
+                className="flex items-center justify-center gap-1.5 p-2.5 sm:p-3 rounded-2xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 font-bold text-xs transition-colors min-h-[42px] disabled:opacity-50"
+                title="Unduh Berita Acara Rekapitulasi Resmi (PDF)"
               >
-                <Download className="w-3.5 h-3.5" />
-                <span>PDF</span>
+                {exportingFormat === 'pdf' ? (
+                  <RotateCcw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Download className="w-3.5 h-3.5" />
+                )}
+                <span>{exportingFormat === 'pdf' ? 'Mengunduh...' : 'PDF'}</span>
               </button>
               <button
-                onClick={() => quickcountService.downloadReport(selectedStageId, 'xlsx')}
-                className="flex items-center justify-center gap-1.5 p-2.5 sm:p-3 rounded-2xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 font-bold text-xs transition-colors min-h-[42px]"
+                type="button"
+                disabled={exportingFormat !== null}
+                onClick={() => handleDownloadReport('xlsx')}
+                className="flex items-center justify-center gap-1.5 p-2.5 sm:p-3 rounded-2xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 font-bold text-xs transition-colors min-h-[42px] disabled:opacity-50"
+                title="Unduh Buku Rekapitulasi Lengkap 4 Sheet (Excel)"
               >
-                <Download className="w-3.5 h-3.5" />
-                <span>Excel</span>
+                {exportingFormat === 'xlsx' ? (
+                  <RotateCcw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Download className="w-3.5 h-3.5" />
+                )}
+                <span>{exportingFormat === 'xlsx' ? 'Mengunduh...' : 'Excel'}</span>
               </button>
               <button
-                onClick={() => quickcountService.downloadReport(selectedStageId, 'csv')}
-                className="flex items-center justify-center gap-1.5 p-2.5 sm:p-3 rounded-2xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 font-bold text-xs transition-colors min-h-[42px]"
+                type="button"
+                disabled={exportingFormat !== null}
+                onClick={() => handleDownloadReport('csv')}
+                className="flex items-center justify-center gap-1.5 p-2.5 sm:p-3 rounded-2xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 font-bold text-xs transition-colors min-h-[42px] disabled:opacity-50"
+                title="Unduh Rekapitulasi Data Terstruktur (CSV)"
               >
-                <Download className="w-3.5 h-3.5" />
-                <span>CSV</span>
+                {exportingFormat === 'csv' ? (
+                  <RotateCcw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Download className="w-3.5 h-3.5" />
+                )}
+                <span>{exportingFormat === 'csv' ? 'Mengunduh...' : 'CSV'}</span>
               </button>
             </div>
           </div>

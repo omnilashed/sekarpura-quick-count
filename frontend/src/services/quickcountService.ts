@@ -138,23 +138,35 @@ export const quickcountService = {
     return res.data;
   },
 
-  getExportUrl(stageId: string, format: 'csv' | 'xlsx' | 'pdf') {
+  getExportUrl(stageId: string, format: 'csv' | 'xlsx' | 'pdf', round?: number) {
     const token = localStorage.getItem('sekarpura_token');
-    return `${BASE_URL}/api/reports/export?stageId=${stageId}&format=${format}&token=${token}`;
+    return `${BASE_URL}/api/reports/export?stageId=${stageId}&format=${format}${round ? `&round=${round}` : ''}&token=${token}`;
   },
 
-  async downloadReport(stageId: string, format: 'csv' | 'xlsx' | 'pdf') {
+  async downloadReport(stageId: string, format: 'csv' | 'xlsx' | 'pdf', round?: number) {
     const res = await api.get('/reports/export', {
-      params: { stageId, format },
+      params: { stageId, format, ...(round ? { round } : {}) },
       responseType: 'blob',
     });
 
+    const contentDisposition = res.headers['content-disposition'] || (res.headers as any)['Content-Disposition'];
+    let filename = '';
+    if (contentDisposition) {
+      const match = contentDisposition.match(/filename=["']?([^"';]+)["']?/);
+      if (match && match[1]) {
+        filename = match[1];
+      }
+    }
     const extension = format === 'xlsx' ? 'xlsx' : format === 'pdf' ? 'pdf' : 'csv';
+    if (!filename) {
+      filename = `rekap-resmi-putaran1-dan-2-sekarpura-${Date.now()}.${extension}`;
+    }
+
     const blob = new Blob([res.data]);
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `rekap-quickcount-sekarpura-${stageId}.${extension}`;
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     window.URL.revokeObjectURL(url);

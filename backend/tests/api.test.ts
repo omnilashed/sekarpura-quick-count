@@ -67,55 +67,52 @@ describe('SEKARPURA Election Center - API & Integrity Tests', () => {
     candidate2Token = cand2Res.body.token;
     loggedCandidate2Id = cand2Res.body.user.candidateId;
 
-    // Get active stage or counting stage
-    const election = await Election.findOne();
-    let stage = election?.activeStageId ? await ElectionStage.findById(election.activeStageId) : null;
-    if (!stage || stage.status !== 'COUNTING') {
-      stage = await ElectionStage.findOne({ status: 'COUNTING' });
-    }
-    if (!stage) {
-      stage = await ElectionStage.findOne();
-    }
-    expect(stage).toBeDefined();
-    stage1Id = stage!._id.toString();
-
-    // Use candidates registered in this stage
-    if (stage!.candidateIds && stage!.candidateIds.length >= 2) {
-      stageCandidate1Id = stage!.candidateIds[0].toString();
-      stageCandidate2Id = stage!.candidateIds[1].toString();
-    } else {
-      stageCandidate1Id = loggedCandidate1Id;
-      stageCandidate2Id = loggedCandidate2Id;
-    }
-
-    // Always create a dedicated test source so tests never touch real election sources
-    let source = await VoteSource.findOne({ stageId: stage1Id, sourceCode: 'TPS-TEST' });
-    if (!source) {
-      source = await VoteSource.create({
-        electionId: stage!.electionId,
-        stageId: stage!._id,
-        sourceCode: 'TPS-TEST',
-        sourceName: 'TPS Unit Test Integrasi',
-        workUnit: 'Test Unit',
-        location: 'Test Room',
-        targetVoters: 50,
-        status: 'NOT_SUBMITTED',
+    // Create dedicated test stage with status COUNTING so test is isolated
+    let election = await Election.findOne();
+    if (!election) {
+      election = await Election.create({
+        title: 'Pemilihan Ketua SEKARPURA Halim Test',
+        branch: 'Halim Perdanakusuma',
+        currentStage: 'STAGE_1',
       });
-    } else {
-      source.status = 'NOT_SUBMITTED';
-      source.activeSubmissionId = undefined;
-      await source.save();
     }
+
+    stageCandidate1Id = loggedCandidate1Id;
+    stageCandidate2Id = loggedCandidate2Id;
+
+    const testStage = await ElectionStage.create({
+      electionId: election._id,
+      stageType: 'STAGE_1',
+      name: 'Tahap 1 Unit Test API',
+      candidateIds: [new mongoose.Types.ObjectId(stageCandidate1Id), new mongoose.Types.ObjectId(stageCandidate2Id)],
+      status: 'COUNTING',
+      totalEligibleVoters: 50,
+      targetVotes: 50,
+    });
+    stage1Id = testStage._id.toString();
+
+    // Create dedicated test source
+    const source = await VoteSource.create({
+      electionId: election._id,
+      stageId: testStage._id,
+      sourceCode: 'TPS-TEST-API',
+      sourceName: 'TPS Unit Test Integrasi API',
+      workUnit: 'Test Unit',
+      location: 'Test Room',
+      targetVoters: 50,
+      status: 'NOT_SUBMITTED',
+    });
     testSourceId = source._id.toString();
   });
 
   afterAll(async () => {
-    // Clean up dedicated test TPS
-    if (testSourceId) {
-      await VoteSubmission.deleteMany({ sourceId: testSourceId });
-      await VoteSource.deleteOne({ _id: testSourceId });
+    // Clean up dedicated test TPS & Stage
+    if (stage1Id) {
+      await ElectionStage.findByIdAndDelete(stage1Id);
+      await VoteSubmission.deleteMany({ stageId: stage1Id });
+      await VoteSource.deleteMany({ stageId: stage1Id });
     }
-    await VoteSource.deleteMany({ sourceCode: { $in: ['TPS-TEST', 'TPS-TEST-MISMATCH'] } });
+    await VoteSource.deleteMany({ sourceCode: { $in: ['TPS-TEST', 'TPS-TEST-API', 'TPS-TEST-MISMATCH'] } });
     await mongoose.disconnect();
   });
 
@@ -210,8 +207,17 @@ describe('SEKARPURA Election Center - API & Integrity Tests', () => {
   });
 
   it('8. Vote submission with mismatched total must be REJECTED', async () => {
-    const anotherSource = await VoteSource.findOne({ status: 'NOT_SUBMITTED' });
-    if (!anotherSource) return;
+    const el = await Election.findOne();
+    const anotherSource = await VoteSource.create({
+      electionId: el!._id,
+      stageId: new mongoose.Types.ObjectId(stage1Id),
+      sourceCode: 'TPS-TEST-MISMATCH',
+      sourceName: 'TPS Test Mismatch',
+      workUnit: 'Test Unit',
+      location: 'Test Room',
+      targetVoters: 50,
+      status: 'NOT_SUBMITTED',
+    });
 
     const res = await request(app)
       .post('/api/quickcount/submit-votes')

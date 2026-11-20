@@ -103,6 +103,30 @@ export interface StageSchemaRules {
     definitiveWinnerId?: string;
     definitiveWinnerName?: string;
   };
+  // Direct aliases for convenience
+  skema1?: {
+    thresholdVotes?: number;
+    threshold50Plus1?: number;
+    hasWinner50Plus1?: boolean;
+    winnerCandidateId?: string;
+    winnerName?: string;
+    isFulfilled?: boolean;
+    top2CandidateIds?: string[];
+    top2CandidateNames?: string[];
+  };
+  skema2?: {
+    isActive?: boolean;
+    is5050Tie?: boolean;
+    requiresGmTieBreaker?: boolean;
+    gmRoleName?: string;
+    gmTieBreakerCast?: boolean;
+    gmTieBreakerCandidateId?: string;
+    gmTieBreakerCandidateName?: string;
+    gmTieBreakerVotedAt?: Date;
+    definitiveWinnerCandidateId?: string;
+    definitiveWinnerName?: string;
+    tieBreakerNotes?: string;
+  };
 }
 
 export interface QuickCountResult {
@@ -533,6 +557,31 @@ export class QuickCountService {
         gmTieBreakerVotedAt: stage.tieBreakerVotedAt,
         definitiveWinnerId,
         definitiveWinnerName,
+      },
+      skema1: {
+        thresholdVotes: thresholdStage2,
+        threshold50Plus1: thresholdStage2,
+        hasWinner50Plus1,
+        winnerCandidateId: hasWinner50Plus1 ? rawRankings[0]?.candidateId : undefined,
+        winnerName: hasWinner50Plus1 ? rawRankings[0]?.fullName : undefined,
+        isFulfilled: isSkema1Fulfilled,
+        top2CandidateIds: top2Candidates.map((c) => c.candidateId),
+        top2CandidateNames: top2Candidates.map((c) => c.fullName),
+      },
+      skema2: {
+        isActive: effectiveRound === 2,
+        is5050Tie,
+        requiresGmTieBreaker,
+        gmRoleName: stage.tieBreakerRole || 'General Manager Bandara Halim Perdanakusuma',
+        gmTieBreakerCast: gmTieBreakerApplied,
+        gmTieBreakerCandidateId: stage.tieBreakerCandidateId?.toString(),
+        gmTieBreakerCandidateName: stage.tieBreakerCandidateId
+          ? candidates.find((c) => c._id.toString() === stage.tieBreakerCandidateId?.toString())?.fullName
+          : undefined,
+        gmTieBreakerVotedAt: stage.tieBreakerVotedAt,
+        definitiveWinnerCandidateId: definitiveWinnerId,
+        definitiveWinnerName,
+        tieBreakerNotes: stage.tieBreakerNotes,
       },
     };
 
