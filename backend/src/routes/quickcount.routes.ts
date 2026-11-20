@@ -67,4 +67,20 @@ router.get(
   QuickCountController.getSubmissionHistory
 );
 
+// Admin: Reset vote data for a specific source / TPS (testing feature)
+router.post(
+  '/sources/:sourceId/reset',
+  authenticate,
+  requireRoles('ADMIN', 'SUPER_ADMIN'),
+  QuickCountController.resetVoteSource
+);
+
+// Admin: Reset all vote data for a stage (testing feature)
+router.post(
+  '/stages/:stageId/reset-votes',
+  authenticate,
+  requireRoles('ADMIN', 'SUPER_ADMIN'),
+  QuickCountController.resetStageVotes
+);
+
 export default router;

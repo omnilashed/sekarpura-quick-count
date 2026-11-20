@@ -52,6 +52,8 @@ export const AdminQuickCountPage: React.FC = () => {
   const [selectedRound, setSelectedRound] = useState<number>(1);
   const [stageQuickCount, setStageQuickCount] = useState<QuickCountData | null>(null);
   const [processingRoundAction, setProcessingRoundAction] = useState<boolean>(false);
+  const [resettingSourceId, setResettingSourceId] = useState<string | null>(null);
+  const [resettingAll, setResettingAll] = useState<boolean>(false);
 
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [tallyFeedback, setTallyFeedback] = useState<string | null>(null);
@@ -470,6 +472,65 @@ export const AdminQuickCountPage: React.FC = () => {
       setShowHistoryModal(true);
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleResetSourceVotes = async (source: VoteSource) => {
+    if (
+      !window.confirm(
+        `Apakah Anda yakin ingin MERESET seluruh data suara untuk ${source.sourceCode} (${source.sourceName})?\n\n` +
+          `Perhatian: Seluruh surat suara yang telah diinput pada TPS ini untuk Putaran ${selectedRound} akan dihapus dan dikembalikan ke 0 untuk keperluan pengujian sistem.`
+      )
+    ) {
+      return;
+    }
+
+    setResettingSourceId(source._id);
+    try {
+      const res = await quickcountService.resetSourceVotes(source._id, selectedRound);
+      setMessage({
+        type: 'success',
+        text: res.message || `Data suara TPS ${source.sourceCode} berhasil direset ke 0.`,
+      });
+      setIsCorrectionMode(false);
+      await loadStageData(selectedStageId, stages, selectedRound);
+    } catch (err: any) {
+      setMessage({
+        type: 'error',
+        text: err.response?.data?.message || 'Gagal mereset data suara TPS.',
+      });
+    } finally {
+      setResettingSourceId(null);
+    }
+  };
+
+  const handleResetAllStageVotes = async () => {
+    if (!selectedStageId) return;
+    if (
+      !window.confirm(
+        `⚠️ PERINGATAN: Apakah Anda yakin ingin MERESET SEMUA data suara untuk tahapan ini?\n\n` +
+          `Seluruh surat suara dari semua TPS pada tahapan ini akan dihapus dan dikembalikan ke 0 untuk pengujian ulang sistem.`
+      )
+    ) {
+      return;
+    }
+
+    setResettingAll(true);
+    try {
+      const res = await quickcountService.resetStageVotes(selectedStageId, selectedRound);
+      setMessage({
+        type: 'success',
+        text: res.message || 'Seluruh data suara tahap ini berhasil direset kembali ke 0.',
+      });
+      setIsCorrectionMode(false);
+      await loadStageData(selectedStageId, stages, selectedRound);
+    } catch (err: any) {
+      setMessage({
+        type: 'error',
+        text: err.response?.data?.message || 'Gagal mereset seluruh data suara tahap ini.',
+      });
+    } finally {
+      setResettingAll(false);
     }
   };
 
@@ -1199,13 +1260,27 @@ export const AdminQuickCountPage: React.FC = () => {
 
           {/* TPS List Status */}
           <div className="bg-white dark:bg-navy-900 border border-slate-200 dark:border-navy-800 rounded-3xl p-4 xs:p-5 sm:p-6 shadow-sm space-y-3 sm:space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-extrabold text-sm sm:text-base text-navy-900 dark:text-white">
-                Daftar Sumber TPS ({sources.length})
-              </h3>
-              <span className="text-xs text-slate-400">
-                {sources.filter((s) => s.status === 'VERIFIED').length} Selesai
-              </span>
+            <div className="flex flex-col xs:flex-row xs:items-center justify-between gap-2 border-b border-slate-100 dark:border-navy-800 pb-3">
+              <div>
+                <h3 className="font-extrabold text-sm sm:text-base text-navy-900 dark:text-white">
+                  Daftar Sumber TPS ({sources.length})
+                </h3>
+                <span className="text-[11px] text-slate-400">
+                  {sources.filter((s) => s.status === 'VERIFIED').length} Selesai Diverifikasi
+                </span>
+              </div>
+              {sources.some((s) => s.status === 'VERIFIED' || s.activeSubmissionId) && (
+                <button
+                  type="button"
+                  onClick={handleResetAllStageVotes}
+                  disabled={resettingAll}
+                  className="px-2.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 text-xs font-bold flex items-center gap-1.5 transition-all self-start xs:self-auto disabled:opacity-50 border border-rose-500/20"
+                  title="Reset Semua Data Suara TPS pada Tahap Ini (Untuk Testing Sistem)"
+                >
+                  <RotateCcw className={`w-3.5 h-3.5 ${resettingAll ? 'animate-spin' : ''}`} />
+                  <span>{resettingAll ? 'Mereset...' : 'Reset Semua Suara'}</span>
+                </button>
+              )}
             </div>
 
             <div className="space-y-2 max-h-[380px] sm:max-h-[420px] overflow-y-auto pr-1">
@@ -1263,11 +1338,23 @@ export const AdminQuickCountPage: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => handleOpenHistory(src)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 min-h-[34px] min-w-[34px] flex items-center justify-center"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 min-h-[34px] min-w-[34px] flex items-center justify-center transition-colors"
                         title="Riwayat Revisi"
                         aria-label="Riwayat Revisi"
                       >
                         <History className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {(src.status === 'VERIFIED' || src.activeSubmissionId) && (
+                      <button
+                        type="button"
+                        onClick={() => handleResetSourceVotes(src)}
+                        disabled={resettingSourceId === src._id}
+                        className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 min-h-[34px] min-w-[34px] flex items-center justify-center transition-colors disabled:opacity-50 border border-rose-500/20"
+                        title="Reset Data Suara TPS Ini (Untuk Testing)"
+                        aria-label="Reset Data Suara TPS"
+                      >
+                        <RotateCcw className={`w-3.5 h-3.5 ${resettingSourceId === src._id ? 'animate-spin' : ''}`} />
                       </button>
                     )}
                   </div>

@@ -808,4 +808,213 @@ export class QuickCountController {
       data: history,
     });
   }
+
+  /**
+   * Admin: Reset Vote Data for a Specific Source / TPS (for system testing)
+   */
+  static async resetVoteSource(req: AuthRequest, res: Response): Promise<void> {
+    const { sourceId } = req.params;
+    const { round } = req.body;
+
+    const source = await VoteSource.findById(sourceId);
+    if (!source) {
+      res.status(404).json({ success: false, message: 'Sumber suara / TPS tidak ditemukan.' });
+      return;
+    }
+
+    const stage = await ElectionStage.findById(source.stageId);
+    if (!stage) {
+      res.status(404).json({ success: false, message: 'Tahap pemilihan tidak ditemukan.' });
+      return;
+    }
+
+    if (stage.status === 'LOCKED') {
+      res.status(403).json({
+        success: false,
+        message: 'Tahap pemilihan telah dikunci permanen. Reset data tidak diizinkan.',
+      });
+      return;
+    }
+
+    const targetRound = round !== undefined ? Number(round) : undefined;
+    const query: any = { sourceId: source._id };
+    if (targetRound !== undefined) {
+      if (targetRound === 1) {
+        query.$or = [{ round: 1 }, { round: { $exists: false } }];
+      } else {
+        query.round = targetRound;
+      }
+    }
+
+    // Delete submissions for this source and round
+    await VoteSubmission.deleteMany(query);
+
+    // Check if any other submissions remain for other rounds
+    const remainingSub = await VoteSubmission.findOne({
+      sourceId: source._id,
+      isLatestRevision: true,
+    }).sort({ createdAt: -1 });
+
+    if (remainingSub) {
+      source.activeSubmissionId = remainingSub._id as any;
+      source.status = 'VERIFIED';
+    } else {
+      source.activeSubmissionId = null as any;
+      source.status = 'NOT_SUBMITTED';
+    }
+    await source.save();
+
+    // If stage is Stage 2 and Putaran 1 is being reset:
+    if (stage.stageType === 'STAGE_2' && (targetRound === 1 || targetRound === undefined)) {
+      stage.round1Completed = false;
+      stage.round2Completed = false;
+      stage.activeRound = 1;
+      stage.isTieBreakerActive = false;
+      stage.tieBreakerCandidateId = null as any;
+      stage.tieBreakerNotes = undefined;
+      await stage.save();
+    }
+
+    // Invalidate micro-cache
+    QuickCountService.invalidateCache(stage._id.toString());
+    const quickcountData = await QuickCountService.calculateStageQuickCount(
+      stage._id.toString(),
+      true,
+      stage.activeRound || 1
+    );
+
+    // Broadcast WebSocket updates
+    broadcastQuickCountUpdate({
+      electionId: stage.electionId.toString(),
+      stageId: stage._id.toString(),
+      quickcountData,
+      leaderChanged: quickcountData.leaderChanged,
+      message: `Data suara TPS ${source.sourceCode} telah direset kembali ke 0.`,
+    });
+
+    // Record audit
+    await AuditService.record({
+      actorId: req.user?.id,
+      actorName: req.user?.name || 'Admin',
+      actorRole: req.user?.role || 'ADMIN',
+      action: 'VOTE_RESET',
+      entityType: 'VoteSource',
+      entityId: source._id.toString(),
+      after: {
+        sourceCode: source.sourceCode,
+        status: source.status,
+        round: targetRound,
+      },
+      reason: req.body?.reason || `Admin mereset data suara TPS ${source.sourceCode} untuk pengujian sistem`,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Data suara untuk TPS ${source.sourceCode} (${source.sourceName}) berhasil direset kembali ke 0.`,
+      source,
+      quickcount: quickcountData,
+    });
+  }
+
+  /**
+   * Admin: Reset All Vote Data for Current Stage (for system testing)
+   */
+  static async resetStageVotes(req: AuthRequest, res: Response): Promise<void> {
+    const { stageId } = req.params;
+    const { round } = req.body;
+
+    const stage = await ElectionStage.findById(stageId);
+    if (!stage) {
+      res.status(404).json({ success: false, message: 'Tahap pemilihan tidak ditemukan.' });
+      return;
+    }
+
+    if (stage.status === 'LOCKED') {
+      res.status(403).json({
+        success: false,
+        message: 'Tahap pemilihan telah dikunci permanen. Reset data tidak diizinkan.',
+      });
+      return;
+    }
+
+    const targetRound = round !== undefined ? Number(round) : undefined;
+    const query: any = { stageId: stage._id };
+    if (targetRound !== undefined) {
+      if (targetRound === 1) {
+        query.$or = [{ round: 1 }, { round: { $exists: false } }];
+      } else {
+        query.round = targetRound;
+      }
+    }
+
+    // Delete all submissions for this stage/round
+    await VoteSubmission.deleteMany(query);
+
+    // Update all vote sources for this stage
+    const sources = await VoteSource.find({ stageId: stage._id });
+    for (const source of sources) {
+      const remainingSub = await VoteSubmission.findOne({
+        sourceId: source._id,
+        isLatestRevision: true,
+      }).sort({ createdAt: -1 });
+
+      if (remainingSub) {
+        source.activeSubmissionId = remainingSub._id as any;
+        source.status = 'VERIFIED';
+      } else {
+        source.activeSubmissionId = null as any;
+        source.status = 'NOT_SUBMITTED';
+      }
+      await source.save();
+    }
+
+    // Reset round state if Stage 2
+    if (stage.stageType === 'STAGE_2') {
+      stage.round1Completed = false;
+      stage.round2Completed = false;
+      stage.activeRound = 1;
+      stage.isTieBreakerActive = false;
+      stage.tieBreakerCandidateId = null as any;
+      stage.tieBreakerNotes = undefined;
+      await stage.save();
+    }
+
+    // Invalidate micro-cache
+    QuickCountService.invalidateCache(stage._id.toString());
+    const quickcountData = await QuickCountService.calculateStageQuickCount(
+      stage._id.toString(),
+      true,
+      stage.activeRound || 1
+    );
+
+    // Broadcast WebSocket updates
+    broadcastQuickCountUpdate({
+      electionId: stage.electionId.toString(),
+      stageId: stage._id.toString(),
+      quickcountData,
+      leaderChanged: quickcountData.leaderChanged,
+      message: `Seluruh data suara tahap ini telah direset kembali ke 0 untuk pengujian.`,
+    });
+
+    // Record audit
+    await AuditService.record({
+      actorId: req.user?.id,
+      actorName: req.user?.name || 'Admin',
+      actorRole: req.user?.role || 'ADMIN',
+      action: 'VOTE_RESET_ALL',
+      entityType: 'ElectionStage',
+      entityId: stage._id.toString(),
+      after: {
+        stageType: stage.stageType,
+        round: targetRound,
+      },
+      reason: req.body?.reason || `Admin mereset seluruh data suara tahap ${stage.stageType} untuk pengujian sistem`,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Seluruh data suara pada tahap ini berhasil direset kembali ke 0.`,
+      quickcount: quickcountData,
+    });
+  }
 }
