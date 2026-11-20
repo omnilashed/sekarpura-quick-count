@@ -1,8 +1,10 @@
 import { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import { Election, ElectionOverallStatus } from '../models/Election.js';
 import { ElectionStage } from '../models/ElectionStage.js';
 import { Candidate } from '../models/Candidate.js';
 import { VoteSource } from '../models/VoteSource.js';
+import { VoteSubmission } from '../models/VoteSubmission.js';
 import { AuthRequest } from '../middlewares/auth.js';
 import { AuditService } from '../services/audit.service.js';
 import { broadcastStageChanged, broadcastQuickCountUpdate } from '../config/socket.js';
@@ -430,6 +432,239 @@ export class ElectionController {
       success: true,
       message: 'Suara penentu GM Bandara Halim PK berhasil direset.',
       quickCount: qcData,
+    });
+  }
+
+  /**
+   * Admin: Advance from Putaran 1 to Putaran 2 (Skema 2 - Head to Head 2 Calon Teratas)
+   */
+  static async advanceRound2(req: AuthRequest, res: Response): Promise<void> {
+    const { stageId } = req.params;
+    const stage = await ElectionStage.findById(stageId);
+    if (!stage) {
+      res.status(404).json({ success: false, message: 'Tahap pemilihan tidak ditemukan.' });
+      return;
+    }
+    if (stage.stageType !== 'STAGE_2') {
+      res.status(400).json({
+        success: false,
+        message: 'Fitur Putaran 2 hanya berlaku untuk Pemilihan Definitif Tahap 2.',
+      });
+      return;
+    }
+
+    // Hitung hasil Putaran 1 secara deterministik dari verified submissions round 1
+    const qcRound1 = await QuickCountService.calculateStageQuickCount(stageId, true, 1);
+    const rankings = qcRound1.rankings;
+
+    if (rankings.length < 2) {
+      res.status(400).json({
+        success: false,
+        message: 'Data perolehan suara Putaran 1 belum mencukupi untuk menentukan 2 calon teratas.',
+      });
+      return;
+    }
+
+    const targetVotes = qcRound1.targetVotes || 24;
+    const threshold50Plus1 = Math.floor(targetVotes / 2) + 1;
+    const top1 = rankings[0];
+
+    // Cek apakah ada pemenang mutlak di Putaran 1
+    if (top1.votes >= threshold50Plus1 && top1.votes > 0) {
+      stage.round1Completed = true;
+      stage.round1WinnerCandidateId = new mongoose.Types.ObjectId(top1.candidateId);
+      stage.status = 'COMPLETED';
+      await stage.save();
+
+      res.status(200).json({
+        success: true,
+        isOutrightWinner: true,
+        message: `Kandidat ${top1.fullName} telah meraih ${top1.votes} suara (≥ 50% + 1 dari ${targetVotes} suara). Dinyatakan Menang Mutlak di Putaran 1!`,
+        winner: top1,
+      });
+      return;
+    }
+
+    // Jika tidak ada pemenang mutlak, ambil 2 calon peraih suara terbanyak
+    const top2Candidates = rankings.slice(0, 2);
+    const top2Ids = top2Candidates.map((c) => new mongoose.Types.ObjectId(c.candidateId));
+
+    stage.round1Completed = true;
+    stage.round1Top2CandidateIds = top2Ids;
+    stage.round2CandidateIds = top2Ids;
+    stage.activeRound = 2;
+    stage.isTieBreakerActive = false;
+    stage.tieBreakerCandidateId = undefined;
+    stage.tieBreakerVotedAt = undefined;
+    stage.tieBreakerNotes = undefined;
+    await stage.save();
+
+    // Invalidate cache & broadcast update
+    QuickCountService.invalidateCache(stageId);
+    const qcRound2 = await QuickCountService.calculateStageQuickCount(stageId, true, 2);
+
+    broadcastQuickCountUpdate({
+      electionId: stage.electionId.toString(),
+      stageId: stage._id.toString(),
+      quickcountData: qcRound2,
+      leaderChanged: qcRound2.leaderChanged,
+      message: `Putaran 2 (Skema 2: Head-to-Head) aktif! Calon: ${top2Candidates.map((c) => c.fullName).join(' vs ')}`,
+    });
+
+    await AuditService.record({
+      actorId: req.user?.id,
+      actorName: req.user?.name || 'Admin',
+      actorRole: req.user?.role || 'ADMIN',
+      action: 'STAGE_ADVANCED_TO_ROUND_2',
+      entityType: 'ElectionStage',
+      entityId: stage._id.toString(),
+      details: {
+        round1Results: rankings.map((r) => ({ name: r.fullName, votes: r.votes })),
+        top2Advanced: top2Candidates.map((c) => ({ id: c.candidateId, name: c.fullName })),
+      },
+      reason: `Putaran 1 tidak mencapai ≥ 50% + 1 (${threshold50Plus1} suara). Melaju ke Putaran 2 Head-to-Head 2 Calon Teratas.`,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Putaran 2 (Skema 2) berhasil diaktifkan dengan 2 calon ketua teratas: ${top2Candidates[0].fullName} (#${top2Candidates[0].candidateNumber}) dan ${top2Candidates[1].fullName} (#${top2Candidates[1].candidateNumber}).`,
+      top2Candidates,
+      quickCount: qcRound2,
+    });
+  }
+
+  /**
+   * Admin: Switch Active Viewing Round (1 or 2)
+   */
+  static async switchRound(req: AuthRequest, res: Response): Promise<void> {
+    const { stageId } = req.params;
+    const { round } = req.body;
+    const targetRound = Number(round);
+    if (targetRound !== 1 && targetRound !== 2) {
+      res.status(400).json({ success: false, message: 'Putaran harus bernilai 1 atau 2.' });
+      return;
+    }
+    const stage = await ElectionStage.findById(stageId);
+    if (!stage) {
+      res.status(404).json({ success: false, message: 'Tahap tidak ditemukan.' });
+      return;
+    }
+    stage.activeRound = targetRound;
+    await stage.save();
+
+    QuickCountService.invalidateCache(stageId);
+    const qc = await QuickCountService.calculateStageQuickCount(stageId, true, targetRound);
+    broadcastQuickCountUpdate({
+      electionId: stage.electionId.toString(),
+      stageId: stage._id.toString(),
+      quickcountData: qc,
+      leaderChanged: qc.leaderChanged,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Tampilan aktif beralih ke Putaran ${targetRound}.`,
+      stage,
+      quickCount: qc,
+    });
+  }
+
+  /**
+   * Admin: Reset / Kembali ke Putaran 1
+   */
+  static async resetRound2(req: AuthRequest, res: Response): Promise<void> {
+    const { stageId } = req.params;
+    const stage = await ElectionStage.findById(stageId);
+    if (!stage) {
+      res.status(404).json({ success: false, message: 'Tahap tidak ditemukan.' });
+      return;
+    }
+
+    // Hapus data suara round 2 jika ada
+    await VoteSubmission.deleteMany({ stageId: stage._id, round: 2 });
+
+    stage.activeRound = 1;
+    stage.round1Completed = false;
+    stage.round1WinnerCandidateId = undefined;
+    stage.round2Completed = false;
+    stage.round2WinnerCandidateId = undefined;
+    stage.isTieBreakerActive = false;
+    stage.tieBreakerCandidateId = undefined;
+    stage.status = 'COUNTING';
+    await stage.save();
+
+    QuickCountService.invalidateCache(stageId);
+    const qc = await QuickCountService.calculateStageQuickCount(stageId, true, 1);
+    broadcastQuickCountUpdate({
+      electionId: stage.electionId.toString(),
+      stageId: stage._id.toString(),
+      quickcountData: qc,
+      leaderChanged: qc.leaderChanged,
+      message: 'Pemilihan dikembalikan ke Putaran 1.',
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Berhasil direset kembali ke Putaran 1.',
+      stage,
+      quickCount: qc,
+    });
+  }
+
+  /**
+   * Admin: Finalize & Simpan Hasil Putaran 2 ke Database
+   */
+  static async finalizeRound2(req: AuthRequest, res: Response): Promise<void> {
+    const { stageId } = req.params;
+    const stage = await ElectionStage.findById(stageId);
+    if (!stage) {
+      res.status(404).json({ success: false, message: 'Tahap tidak ditemukan.' });
+      return;
+    }
+
+    const qcRound2 = await QuickCountService.calculateStageQuickCount(stageId, true, 2);
+    const rankings = qcRound2.rankings;
+
+    if (rankings.length < 2) {
+      res.status(400).json({
+        success: false,
+        message: 'Data perolehan suara Putaran 2 belum tersedia.',
+      });
+      return;
+    }
+
+    const top1 = rankings[0];
+    const top2 = rankings[1];
+
+    if (top1.votes === top2.votes && !stage.isTieBreakerActive) {
+      res.status(400).json({
+        success: false,
+        message:
+          'Hasil suara Putaran 2 masih imbang 50% - 50%. Wajib menggunakan hak 1 suara penentu General Manager Bandara Halim PK.',
+      });
+      return;
+    }
+
+    stage.round2Completed = true;
+    stage.round2WinnerCandidateId = new mongoose.Types.ObjectId(top1.candidateId);
+    stage.status = 'COMPLETED';
+    stage.endedAt = new Date();
+    await stage.save();
+
+    QuickCountService.invalidateCache(stageId);
+    broadcastQuickCountUpdate({
+      electionId: stage.electionId.toString(),
+      stageId: stage._id.toString(),
+      quickcountData: qcRound2,
+      leaderChanged: false,
+      message: `Pemilihan Definitif Selesai! Ketua Terpilih: ${top1.fullName}`,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Pemilihan Definitif telah disahkan & disimpan ke database! Ketua Terpilih: ${top1.fullName} (#${top1.candidateNumber}).`,
+      winner: top1,
+      quickCount: qcRound2,
     });
   }
 }

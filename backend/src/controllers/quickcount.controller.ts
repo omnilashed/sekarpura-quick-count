@@ -16,16 +16,42 @@ import {
   submitVotesSchema,
 } from '../validations/schemas.js';
 
+async function syncStageTargetVotes(stageId: mongoose.Types.ObjectId | string): Promise<void> {
+  const allSources = await VoteSource.find({ stageId });
+  const totalTargetVoters = allSources.reduce((sum, s) => sum + (s.targetVoters || 0), 0);
+  if (totalTargetVoters > 0) {
+    await ElectionStage.findByIdAndUpdate(stageId, {
+      targetVotes: totalTargetVoters,
+      totalEligibleVoters: totalTargetVoters,
+    });
+  }
+  QuickCountService.invalidateCache(stageId.toString());
+  const updatedQc = await QuickCountService.calculateStageQuickCount(stageId.toString(), true).catch(() => null);
+  if (updatedQc) {
+    broadcastQuickCountUpdate({
+      electionId: updatedQc.electionId,
+      stageId: updatedQc.stageId,
+      quickcountData: updatedQc,
+      leaderChanged: updatedQc.leaderChanged,
+      message: `Target surat suara diperbarui (${updatedQc.targetVotes} suara)`,
+    });
+  }
+}
+
 export class QuickCountController {
   /**
    * Get QuickCount Results (Public / Admin)
    */
   static async getQuickCount(req: Request, res: Response): Promise<void> {
-    const { stageId } = req.query;
+    const { stageId, round } = req.query;
 
     let result;
     if (stageId && typeof stageId === 'string') {
-      result = await QuickCountService.calculateStageQuickCount(stageId);
+      result = await QuickCountService.calculateStageQuickCount(
+        stageId,
+        false,
+        round ? Number(round) : undefined
+      );
     } else {
       result = await QuickCountService.getActiveStageQuickCount();
     }
@@ -104,6 +130,7 @@ export class QuickCountController {
     });
 
     await source.save();
+    await syncStageTargetVotes(stage._id);
 
     res.status(201).json({
       success: true,
@@ -158,10 +185,14 @@ export class QuickCountController {
       }
     }
 
-    // Integrity check: Check if submission already exists
+    const targetRound =
+      req.body.round !== undefined ? Number(req.body.round) : (stage.activeRound || 1);
+
+    // Integrity check: Check if submission already exists for this round
     const existingSubmission = await VoteSubmission.findOne({
       stageId: stage._id,
       sourceId: source._id,
+      round: targetRound,
       isLatestRevision: true,
     });
 
@@ -169,7 +200,7 @@ export class QuickCountController {
       res.status(409).json({
         success: false,
         message:
-          'Data suara untuk sumber ini sudah pernah dimasukkan. Gunakan fitur Koreksi Suara dengan mencantumkan alasan revisi.',
+          `Data suara Putaran ${targetRound} untuk sumber ini sudah pernah dimasukkan. Gunakan fitur Koreksi Suara dengan mencantumkan alasan revisi.`,
       });
       return;
     }
@@ -191,6 +222,7 @@ export class QuickCountController {
       electionId: stage.electionId,
       stageId: stage._id,
       sourceId: source._id,
+      round: targetRound,
       votes: validated.votes.map((v) => ({
         candidateId: new mongoose.Types.ObjectId(v.candidateId),
         candidateNumber: v.candidateNumber,
@@ -217,7 +249,11 @@ export class QuickCountController {
 
     // Invalidate cache & recalculate quickcount freshly
     QuickCountService.invalidateCache(stage._id.toString());
-    const quickcountData = await QuickCountService.calculateStageQuickCount(stage._id.toString(), true);
+    const quickcountData = await QuickCountService.calculateStageQuickCount(
+      stage._id.toString(),
+      true,
+      targetRound
+    );
 
     // Broadcast updates via Socket.IO
     broadcastQuickCountUpdate({
@@ -455,6 +491,7 @@ export class QuickCountController {
     if (targetVoters !== undefined) source.targetVoters = Number(targetVoters);
 
     await source.save();
+    await syncStageTargetVotes(source.stageId);
 
     await AuditService.record({
       actorId: req.user?.id,
@@ -498,6 +535,7 @@ export class QuickCountController {
     // Delete any draft submissions associated with this source
     await VoteSubmission.deleteMany({ sourceId: source._id });
     await VoteSource.findByIdAndDelete(source._id);
+    await syncStageTargetVotes(source.stageId);
 
     await AuditService.record({
       actorId: req.user?.id,
@@ -521,7 +559,16 @@ export class QuickCountController {
    * Admin: Live Tally (+1 / -1 per surat suara tanpa syarat revisi)
    */
   static async liveTally(req: AuthRequest, res: Response): Promise<void> {
-    const { stageId, sourceId, candidateId, isInvalidVote, delta = 1, votes, invalidVotes } = req.body;
+    const {
+      stageId,
+      sourceId,
+      candidateId,
+      isInvalidVote,
+      delta = 1,
+      votes,
+      invalidVotes,
+      round,
+    } = req.body;
 
     const stage = await ElectionStage.findById(stageId);
     if (!stage) {
@@ -543,15 +590,26 @@ export class QuickCountController {
       return;
     }
 
-    // Find existing latest submission or initialize one
+    const targetRound = round !== undefined ? Number(round) : (stage.activeRound || 1);
+
+    // Find existing latest submission for this round or initialize one
     let submission = await VoteSubmission.findOne({
       stageId: stage._id,
       sourceId: source._id,
+      round: targetRound,
       isLatestRevision: true,
     });
 
     if (!submission) {
-      const candidates = await Candidate.find({ _id: { $in: stage.candidateIds } });
+      const candidateListIds =
+        stage.stageType === 'STAGE_2' &&
+        targetRound === 2 &&
+        stage.round2CandidateIds &&
+        stage.round2CandidateIds.length > 0
+          ? stage.round2CandidateIds
+          : stage.candidateIds;
+
+      const candidates = await Candidate.find({ _id: { $in: candidateListIds } });
       const initialVotes = candidates.map((c) => ({
         candidateId: c._id,
         candidateNumber: c.candidateNumber,
@@ -562,6 +620,7 @@ export class QuickCountController {
         electionId: stage.electionId,
         stageId: stage._id,
         sourceId: source._id,
+        round: targetRound,
         votes: initialVotes,
         invalidVotes: 0,
         totalVotes: 0,
@@ -571,7 +630,7 @@ export class QuickCountController {
         submittedBy: req.user?.id,
         verifiedBy: req.user?.id,
         verifiedAt: new Date(),
-        notes: 'Live Tally Mode (Penghitungan per Lembar Surat Suara)',
+        notes: `Live Tally Mode (Penghitungan Putaran ${targetRound})`,
       });
     }
 
@@ -618,7 +677,11 @@ export class QuickCountController {
 
     // Invalidate cache & recalculate quickcount freshly
     QuickCountService.invalidateCache(stage._id.toString());
-    const quickcountData = await QuickCountService.calculateStageQuickCount(stage._id.toString(), true);
+    const quickcountData = await QuickCountService.calculateStageQuickCount(
+      stage._id.toString(),
+      true,
+      targetRound
+    );
 
     // Broadcast instant WebSocket update
     broadcastQuickCountUpdate({

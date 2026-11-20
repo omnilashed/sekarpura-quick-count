@@ -113,6 +113,31 @@ export interface StageSchemaRules {
   stageType: 'STAGE_1' | 'STAGE_2';
   targetVotes: number;
   remainingVotes: number;
+  activeRound?: number;
+  currentRound?: number;
+  round1Completed?: boolean;
+  round2Completed?: boolean;
+  round1Summary?: {
+    totalVotesIn: number;
+    validVotes: number;
+    invalidVotes: number;
+    threshold50Plus1: number;
+    hasWinner50Plus1: boolean;
+    winnerCandidateId?: string;
+    winnerName?: string;
+    top2Candidates: Array<{
+      candidateId: string;
+      candidateNumber: number;
+      fullName: string;
+      votes: number;
+    }>;
+    rankings: Array<{
+      candidateId: string;
+      candidateNumber: number;
+      fullName: string;
+      votes: number;
+    }>;
+  };
   stage2Definitive?: {
     activeSchema: 'SKEMA_1' | 'SKEMA_2';
     threshold50Plus1: number;
@@ -174,6 +199,10 @@ export interface QuickCountData {
   targetSourcesCount: number;
   completedSourcesCount: number;
   progressPercentage: number;
+  activeRound?: number;
+  currentRound?: number;
+  round1Completed?: boolean;
+  round2Completed?: boolean;
   rankings: CandidateRanking[];
   top5: CandidateRanking[];
   leaderChanged: boolean;
@@ -219,6 +248,13 @@ export interface ElectionStage {
   invalidVotes: number;
   targetSourcesCount: number;
   completedSourcesCount: number;
+  activeRound?: number;
+  round1Completed?: boolean;
+  round1WinnerCandidateId?: any;
+  round1Top2CandidateIds?: any[];
+  round2CandidateIds?: any[];
+  round2Completed?: boolean;
+  round2WinnerCandidateId?: any;
   isTieBreakerActive?: boolean;
   tieBreakerRole?: string;
   tieBreakerCandidateId?: any;

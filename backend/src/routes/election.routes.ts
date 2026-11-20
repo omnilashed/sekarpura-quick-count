@@ -49,4 +49,36 @@ router.delete(
   ElectionController.resetGmTieBreaker
 );
 
+// Admin: Advance from Putaran 1 to Putaran 2 (Skema 2: Head to Head 2 Calon Teratas)
+router.post(
+  '/stages/:stageId/advance-round-2',
+  authenticate,
+  requireRoles('ADMIN', 'SUPER_ADMIN'),
+  ElectionController.advanceRound2
+);
+
+// Admin: Switch active round viewing
+router.post(
+  '/stages/:stageId/switch-round',
+  authenticate,
+  requireRoles('ADMIN', 'SUPER_ADMIN'),
+  ElectionController.switchRound
+);
+
+// Admin: Reset Putaran 2 back to Putaran 1
+router.post(
+  '/stages/:stageId/reset-round-2',
+  authenticate,
+  requireRoles('ADMIN', 'SUPER_ADMIN'),
+  ElectionController.resetRound2
+);
+
+// Admin: Finalize and lock Putaran 2 to database
+router.post(
+  '/stages/:stageId/finalize-round-2',
+  authenticate,
+  requireRoles('ADMIN', 'SUPER_ADMIN'),
+  ElectionController.finalizeRound2
+);
+
 export default router;

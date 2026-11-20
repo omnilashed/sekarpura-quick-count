@@ -15,6 +15,7 @@ export interface IVoteSubmission extends Document {
   votes: IVoteEntry[];
   invalidVotes: number;
   totalVotes: number;
+  round: number;
   revision: number;
   isLatestRevision: boolean;
   verificationStatus: SubmissionVerificationStatus;
@@ -43,6 +44,7 @@ const VoteSubmissionSchema = new Schema<IVoteSubmission>(
     ],
     invalidVotes: { type: Number, required: true, min: 0, default: 0 },
     totalVotes: { type: Number, required: true, min: 0 },
+    round: { type: Number, default: 1, min: 1, max: 2, index: true },
     revision: { type: Number, default: 1 },
     isLatestRevision: { type: Boolean, default: true, index: true },
     verificationStatus: {
@@ -64,7 +66,7 @@ const VoteSubmissionSchema = new Schema<IVoteSubmission>(
   }
 );
 
-// Compound index for querying latest submissions per stage and source
-VoteSubmissionSchema.index({ stageId: 1, sourceId: 1, revision: -1 });
+// Compound index for querying latest submissions per stage, source, and round
+VoteSubmissionSchema.index({ stageId: 1, sourceId: 1, round: 1, revision: -1 });
 
 export const VoteSubmission = mongoose.model<IVoteSubmission>('VoteSubmission', VoteSubmissionSchema);

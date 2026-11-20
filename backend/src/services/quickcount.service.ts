@@ -26,6 +26,31 @@ export interface StageSchemaRules {
   stageType: 'STAGE_1' | 'STAGE_2';
   targetVotes: number;
   remainingVotes: number;
+  activeRound: number;
+  currentRound: number;
+  round1Completed: boolean;
+  round2Completed: boolean;
+  round1Summary?: {
+    totalVotesIn: number;
+    validVotes: number;
+    invalidVotes: number;
+    threshold50Plus1: number;
+    hasWinner50Plus1: boolean;
+    winnerCandidateId?: string;
+    winnerName?: string;
+    top2Candidates: Array<{
+      candidateId: string;
+      candidateNumber: number;
+      fullName: string;
+      votes: number;
+    }>;
+    rankings: Array<{
+      candidateId: string;
+      candidateNumber: number;
+      fullName: string;
+      votes: number;
+    }>;
+  };
   // Alur 2 Skema Pemilihan Ketua Definitif (Tahap 2)
   stage2Definitive: {
     activeSchema: 'SKEMA_1' | 'SKEMA_2';
@@ -91,6 +116,10 @@ export interface QuickCountResult {
   targetSourcesCount: number;
   completedSourcesCount: number;
   progressPercentage: number;
+  activeRound: number;
+  currentRound: number;
+  round1Completed: boolean;
+  round2Completed: boolean;
   rankings: CandidateRanking[];
   top5: CandidateRanking[];
   leaderChanged: boolean;
@@ -135,7 +164,11 @@ export class QuickCountService {
    */
   static invalidateCache(stageId?: string): void {
     if (stageId) {
-      quickCountCache.delete(stageId);
+      for (const key of quickCountCache.keys()) {
+        if (key === stageId || key.startsWith(`${stageId}_`)) {
+          quickCountCache.delete(key);
+        }
+      }
     } else {
       quickCountCache.clear();
     }
@@ -143,38 +176,72 @@ export class QuickCountService {
 
   static async calculateStageQuickCount(
     stageId: string,
-    bypassCache = false
+    bypassCache = false,
+    requestedRound?: number
   ): Promise<QuickCountResult> {
-    if (!bypassCache) {
-      const cached = quickCountCache.get(stageId);
-      if (cached && Date.now() < cached.expiry) {
-        return cached.data;
-      }
-    }
-
     const stage = await ElectionStage.findById(stageId);
     if (!stage) {
       throw new Error('Tahap pemilihan tidak ditemukan.');
     }
 
-    // Load candidates registered in this stage
-    const candidates = await Candidate.find({ _id: { $in: stage.candidateIds } })
+    const effectiveRound =
+      requestedRound !== undefined ? Number(requestedRound) : (stage.activeRound || 1);
+    const cacheKey = `${stageId}_round_${effectiveRound}`;
+
+    if (!bypassCache) {
+      const cached = quickCountCache.get(cacheKey);
+      if (cached && Date.now() < cached.expiry) {
+        return cached.data;
+      }
+    }
+
+    // Tentukan kandidat yang bertanding pada putaran ini
+    const candidateIdsToLoad =
+      stage.stageType === 'STAGE_2' &&
+      effectiveRound === 2 &&
+      stage.round2CandidateIds &&
+      stage.round2CandidateIds.length > 0
+        ? stage.round2CandidateIds
+        : stage.candidateIds;
+
+    // Load candidates registered in this stage / round
+    const candidates = await Candidate.find({ _id: { $in: candidateIdsToLoad } })
       .sort({ candidateNumber: 1 })
       .lean();
 
-    // Get all verified, latest submissions for this stage
-    const submissions = await VoteSubmission.find({
+    // Query filter untuk submission sesuai putaran (Round 1 fallback ke legacy submission tanpa field round)
+    const submissionFilter: any = {
       stageId: new mongoose.Types.ObjectId(stageId),
       verificationStatus: 'VERIFIED',
       isLatestRevision: true,
-    })
+    };
+    if (effectiveRound === 1) {
+      submissionFilter.$or = [{ round: 1 }, { round: { $exists: false } }];
+    } else {
+      submissionFilter.round = effectiveRound;
+    }
+
+    // Get all verified, latest submissions for this stage and round
+    const submissions = await VoteSubmission.find(submissionFilter)
       .populate('sourceId', 'sourceCode sourceName workUnit location')
       .sort({ verifiedAt: 1, createdAt: 1 })
       .lean();
 
-    // Get vote sources count
-    const totalSources = await VoteSource.countDocuments({ stageId: stage._id });
+    // Ambil data seluruh TPS / sumber suara pada tahap ini
+    const sources = await VoteSource.find({ stageId: stage._id }).lean();
+    const totalSources = sources.length;
     const completedSources = submissions.length;
+
+    // Target votes determination: prioritaskan jumlah total targetVoters dari seluruh TPS / Sumber Suara
+    const sourcesTargetSum = sources.reduce((sum, s) => sum + (s.targetVoters || 0), 0);
+    const baseTarget =
+      sourcesTargetSum > 0
+        ? sourcesTargetSum
+        : stage.targetVotes && stage.targetVotes > 0
+        ? stage.targetVotes
+        : stage.stageType === 'STAGE_2'
+        ? 24
+        : stage.totalEligibleVoters || 102;
 
     // Aggregate votes per candidate
     const voteCountMap = new Map<string, number>();
@@ -214,7 +281,11 @@ export class QuickCountService {
 
     // Apply GM Halim Tie-Breaker Vote in Stage 2 if active (+1 decisive vote)
     let gmTieBreakerApplied = false;
-    if (stage.stageType === 'STAGE_2' && stage.isTieBreakerActive && stage.tieBreakerCandidateId) {
+    if (
+      stage.stageType === 'STAGE_2' &&
+      stage.isTieBreakerActive &&
+      stage.tieBreakerCandidateId
+    ) {
       const cId = stage.tieBreakerCandidateId.toString();
       if (voteCountMap.has(cId)) {
         voteCountMap.set(cId, (voteCountMap.get(cId) || 0) + 1);
@@ -224,15 +295,7 @@ export class QuickCountService {
     }
 
     const totalVotesIn = validVotes + invalidVotes;
-
-    // Target votes determination: default 25 for Stage 2 (24 pemilih muscab + 1 potensi suara penentu GM Halim)
-    const baseTarget =
-      stage.targetVotes && stage.targetVotes > 0
-        ? stage.targetVotes
-        : stage.stageType === 'STAGE_2'
-        ? 25
-        : stage.totalEligibleVoters || 102;
-    const targetVotes = baseTarget;
+    const targetVotes = gmTieBreakerApplied ? Math.max(baseTarget, totalVotesIn) : baseTarget;
 
     // Build rankings with deterministic tie-breaking (votes DESC, then candidateNumber ASC)
     const rawRankings = candidates.map((cand) => {
@@ -332,16 +395,68 @@ export class QuickCountService {
 
     const remainingVotes = Math.max(0, targetVotes - totalVotesIn);
 
+    // Ambil ringkasan Putaran 1 secara otomatis jika pada Tahap 2 untuk riwayat / perbandingan
+    let round1Summary: any = undefined;
+    if (stage.stageType === 'STAGE_2') {
+      const r1Submissions = await VoteSubmission.find({
+        stageId: stage._id,
+        verificationStatus: 'VERIFIED',
+        isLatestRevision: true,
+        $or: [{ round: 1 }, { round: { $exists: false } }],
+      }).lean();
+
+      if (r1Submissions.length > 0) {
+        const r1Map = new Map<string, number>();
+        let r1Valid = 0;
+        let r1Invalid = 0;
+        const allDefCandidates = await Candidate.find({ _id: { $in: stage.candidateIds } }).lean();
+        allDefCandidates.forEach((c) => r1Map.set(c._id.toString(), 0));
+
+        for (const sub of r1Submissions) {
+          r1Invalid += sub.invalidVotes || 0;
+          for (const v of sub.votes) {
+            const id = v.candidateId.toString();
+            r1Map.set(id, (r1Map.get(id) || 0) + v.count);
+            r1Valid += v.count;
+          }
+        }
+        const r1Rankings = allDefCandidates
+          .map((c) => ({
+            candidateId: c._id.toString(),
+            candidateNumber: c.candidateNumber,
+            fullName: c.fullName,
+            votes: r1Map.get(c._id.toString()) || 0,
+          }))
+          .sort((a, b) => b.votes - a.votes);
+
+        const r1Threshold = Math.floor(baseTarget / 2) + 1;
+        round1Summary = {
+          totalVotesIn: r1Valid + r1Invalid,
+          validVotes: r1Valid,
+          invalidVotes: r1Invalid,
+          threshold50Plus1: r1Threshold,
+          hasWinner50Plus1: (r1Rankings[0]?.votes || 0) >= r1Threshold && (r1Rankings[0]?.votes || 0) > 0,
+          winnerCandidateId:
+            (r1Rankings[0]?.votes || 0) >= r1Threshold ? r1Rankings[0]?.candidateId : undefined,
+          winnerName:
+            (r1Rankings[0]?.votes || 0) >= r1Threshold ? r1Rankings[0]?.fullName : undefined,
+          top2Candidates: r1Rankings.slice(0, 2),
+          rankings: r1Rankings,
+        };
+      }
+    }
+
     const schemaRules: StageSchemaRules = {
       stageType: stage.stageType,
       targetVotes,
       remainingVotes,
+      activeRound: stage.activeRound || 1,
+      currentRound: effectiveRound,
+      round1Completed: stage.round1Completed || false,
+      round2Completed: stage.round2Completed || false,
+      round1Summary,
       stage2Definitive: {
-        activeSchema: isSkema1Fulfilled
-          ? 'SKEMA_1'
-          : rawRankings.length > 2 && !hasWinner50Plus1 && remainingVotes > 0
-          ? 'SKEMA_1'
-          : 'SKEMA_2',
+        activeSchema: effectiveRound === 1 ? 'SKEMA_1' : 'SKEMA_2',
         threshold50Plus1: thresholdStage2,
         skema1: {
           thresholdVotes: thresholdStage2,
@@ -353,7 +468,7 @@ export class QuickCountService {
           top2CandidateNames: top2Candidates.map((c) => c.fullName),
         },
         skema2: {
-          isActive: !isSkema1Fulfilled,
+          isActive: effectiveRound === 2,
           is5050Tie,
           requiresGmTieBreaker,
           gmRoleName: stage.tieBreakerRole || 'General Manager Bandara Halim Perdanakusuma',
@@ -410,7 +525,7 @@ export class QuickCountService {
       invalidVotes,
       targetSourcesCount: totalSources,
       completedSourcesCount: completedSources,
-      targetVotes,
+      targetVotes: baseTarget,
     });
 
     // Recent safe public activities
@@ -448,6 +563,10 @@ export class QuickCountService {
       targetSourcesCount: totalSources,
       completedSourcesCount: completedSources,
       progressPercentage,
+      activeRound: stage.activeRound || 1,
+      currentRound: effectiveRound,
+      round1Completed: stage.round1Completed || false,
+      round2Completed: stage.round2Completed || false,
       rankings,
       top5,
       leaderChanged,
@@ -465,7 +584,7 @@ export class QuickCountService {
     };
 
     // Simpan ke in-memory micro-cache
-    quickCountCache.set(stageId, { data: result, expiry: Date.now() + CACHE_TTL_MS });
+    quickCountCache.set(cacheKey, { data: result, expiry: Date.now() + CACHE_TTL_MS });
 
     return result;
   }

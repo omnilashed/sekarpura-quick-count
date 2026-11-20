@@ -2,9 +2,9 @@ import api, { BASE_URL } from './api';
 import { QuickCountData, VoteSource } from '../types';
 
 export const quickcountService = {
-  async getQuickCount(stageId?: string) {
+  async getQuickCount(stageId?: string, round?: number) {
     const res = await api.get<{ success: boolean; data: QuickCountData }>('/quickcount', {
-      params: { stageId },
+      params: { stageId, round },
     });
     return res.data.data;
   },
@@ -61,6 +61,7 @@ export const quickcountService = {
     votes: Array<{ candidateId: string; candidateNumber: number; count: number }>;
     invalidVotes: number;
     totalVotes: number;
+    round?: number;
     notes?: string;
   }) {
     const res = await api.post<{ success: boolean; message: string; quickcount: QuickCountData }>(
@@ -78,6 +79,7 @@ export const quickcountService = {
     delta?: number;
     votes?: Array<{ candidateId: string; candidateNumber: number; count: number }>;
     invalidVotes?: number;
+    round?: number;
   }) {
     const res = await api.post<{
       success: boolean;

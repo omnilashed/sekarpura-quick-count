@@ -7,11 +7,17 @@ import {
   Zap,
   Plus,
   Minus,
+  Trophy,
+  ShieldCheck,
+  Layers,
+  ArrowRight,
+  RotateCcw,
+  Sparkles,
 } from 'lucide-react';
 import { quickcountService } from '../../services/quickcountService';
 import { electionService } from '../../services/electionService';
 import { candidateService } from '../../services/candidateService';
-import { VoteSource, Candidate, ElectionStage } from '../../types';
+import { VoteSource, Candidate, ElectionStage, QuickCountData } from '../../types';
 
 export const AdminQuickCountPage: React.FC = () => {
   const [stages, setStages] = useState<ElectionStage[]>([]);
@@ -38,6 +44,11 @@ export const AdminQuickCountPage: React.FC = () => {
   const [selectedGmCandidateId, setSelectedGmCandidateId] = useState<string>('');
   const [gmNotes, setGmNotes] = useState<string>('');
   const [submittingGm, setSubmittingGm] = useState<boolean>(false);
+
+  // Round management states (Tahap 2 Definitive Election)
+  const [selectedRound, setSelectedRound] = useState<number>(1);
+  const [stageQuickCount, setStageQuickCount] = useState<QuickCountData | null>(null);
+  const [processingRoundAction, setProcessingRoundAction] = useState<boolean>(false);
 
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [tallyFeedback, setTallyFeedback] = useState<string | null>(null);
@@ -80,34 +91,60 @@ export const AdminQuickCountPage: React.FC = () => {
     loadStageData(stageId, stages);
   };
 
-  const loadStageData = async (stageId: string, currentStages?: ElectionStage[]) => {
+  const loadStageData = async (
+    stageId: string,
+    currentStages?: ElectionStage[],
+    forcedRound?: number
+  ) => {
     try {
       setLoading(true);
-      const [srcList, candList] = await Promise.all([
-        quickcountService.getSources(stageId),
-        candidateService.getAll(),
-      ]);
-      setSources(srcList);
-
-      // Filter candidates for this stage
       const stageList = currentStages || stages;
       const stage = stageList.find((s) => s._id === stageId);
-      const stageCandIds = stage?.candidateIds?.map((c: any) => (typeof c === 'string' ? c : c._id)) || [];
+      const effectiveRound =
+        forcedRound !== undefined ? forcedRound : stage?.activeRound || 1;
+      setSelectedRound(effectiveRound);
 
-      // If stage has specific candidateIds registered, filter strictly by them
+      const [srcList, candList, qcData] = await Promise.all([
+        quickcountService.getSources(stageId),
+        candidateService.getAll(),
+        quickcountService.getQuickCount(stageId, effectiveRound).catch(() => null),
+      ]);
+      setSources(srcList);
+      setStageQuickCount(qcData);
+
+      // Filter candidates for this stage & round
+      let stageCandIds: string[] = [];
+      if (
+        stage?.stageType === 'STAGE_2' &&
+        effectiveRound === 2 &&
+        stage.round2CandidateIds &&
+        stage.round2CandidateIds.length > 0
+      ) {
+        stageCandIds = stage.round2CandidateIds.map((c: any) =>
+          typeof c === 'string' ? c : c._id
+        );
+      } else {
+        stageCandIds =
+          stage?.candidateIds?.map((c: any) => (typeof c === 'string' ? c : c._id)) || [];
+      }
+
       const stageCandidates = candList.data.filter((c) =>
         stageCandIds.length > 0 ? stageCandIds.includes(c._id) : true
       );
       setCandidates(stageCandidates);
 
-      // Initialize inputs
+      // Pre-fill inputs from current quickcount rankings for this round if available
       const initialMap: Record<string, number> = {};
       stageCandidates.forEach((c) => {
-        initialMap[c._id] = 0;
+        const existingRank = qcData?.rankings?.find((r) => r.candidateId === c._id);
+        initialMap[c._id] = existingRank ? existingRank.votes : 0;
       });
       setVoteInputs(initialMap);
-      setInvalidVotes(0);
-      setSelectedSourceId('');
+      setInvalidVotes(qcData?.invalidVotes || 0);
+
+      if (srcList.length > 0) {
+        setSelectedSourceId(srcList[0]._id);
+      }
       setIsCorrectionMode(false);
     } catch (err) {
       console.error(err);
@@ -123,7 +160,6 @@ export const AdminQuickCountPage: React.FC = () => {
     const source = sources.find((s) => s._id === sourceId);
 
     if (source && source.status === 'VERIFIED' && source.activeSubmissionId) {
-      // Switch to correction mode
       setIsCorrectionMode(true);
       const sub = source.activeSubmissionId;
       const map: Record<string, number> = {};
@@ -138,10 +174,11 @@ export const AdminQuickCountPage: React.FC = () => {
       setIsCorrectionMode(false);
       const initialMap: Record<string, number> = {};
       candidates.forEach((c) => {
-        initialMap[c._id] = 0;
+        const existingRank = stageQuickCount?.rankings?.find((r) => r.candidateId === c._id);
+        initialMap[c._id] = existingRank ? existingRank.votes : 0;
       });
       setVoteInputs(initialMap);
-      setInvalidVotes(0);
+      setInvalidVotes(stageQuickCount?.invalidVotes || 0);
       setNotes('');
       setCorrectionReason('');
     }
@@ -175,6 +212,7 @@ export const AdminQuickCountPage: React.FC = () => {
         candidateId: candidateId || undefined,
         isInvalidVote: isInvalid,
         delta,
+        round: selectedRound,
       });
 
       const candName = candidateId
@@ -185,8 +223,9 @@ export const AdminQuickCountPage: React.FC = () => {
       );
       setTimeout(() => setTallyFeedback(null), 3500);
 
-      // Refresh sources in background to update status to VERIFIED
+      // Refresh sources and quick count in background
       quickcountService.getSources(selectedStageId).then(setSources);
+      quickcountService.getQuickCount(selectedStageId, selectedRound).then(setStageQuickCount);
     } catch (err: any) {
       setMessage({
         type: 'error',
@@ -212,20 +251,21 @@ export const AdminQuickCountPage: React.FC = () => {
     }));
 
     try {
-      // Use liveTally directly: updates or creates without throwing revision/conflict errors
+      // Use liveTally directly: updates or creates with round
       const res = await quickcountService.liveTally({
         stageId: selectedStageId,
         sourceId: selectedSourceId,
         votes: voteItems,
         invalidVotes: Number(invalidVotes) || 0,
+        round: selectedRound,
       });
 
       setMessage({
         type: 'success',
-        text: `Data suara (${res.submission.totalVotes} suara) berhasil disimpan & disiarkan secara real-time!`,
+        text: `Data suara Putaran ${selectedRound} (${res.submission.totalVotes} suara) berhasil disimpan ke database & disiarkan real-time!`,
       });
 
-      loadStageData(selectedStageId);
+      await loadStageData(selectedStageId, stages, selectedRound);
     } catch (err: any) {
       setMessage({
         type: 'error',
@@ -233,6 +273,113 @@ export const AdminQuickCountPage: React.FC = () => {
       });
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // Round Action Handlers for 2-Schema Tahap 2
+  const handleSwitchRound = async (round: number) => {
+    setSelectedRound(round);
+    if (selectedStageId) {
+      try {
+        await electionService.switchRound(selectedStageId, round);
+        const ov = await electionService.getOverview();
+        setStages(ov.stages);
+        await loadStageData(selectedStageId, ov.stages, round);
+      } catch (err: any) {
+        console.error(err);
+      }
+    }
+  };
+
+  const handleAdvanceRound2 = async () => {
+    if (!selectedStageId) return;
+    if (
+      !window.confirm(
+        'Lanjut ke Putaran 2 (Skema 2: Head-to-Head 2 Calon Teratas)?\n\n' +
+          'Sistem akan menyimpan hasil Putaran 1 secara permanen dan menyaring kandidat menjadi 2 calon peraih suara terbanyak untuk bertanding di Putaran 2.'
+      )
+    ) {
+      return;
+    }
+    setProcessingRoundAction(true);
+    try {
+      const res = await electionService.advanceRound2(selectedStageId);
+      setMessage({
+        type: 'success',
+        text: res.message || 'Berhasil lanjut ke Putaran 2 (Skema 2)!',
+      });
+      const ov = await electionService.getOverview();
+      setStages(ov.stages);
+      setSelectedRound(2);
+      await loadStageData(selectedStageId, ov.stages, 2);
+    } catch (err: any) {
+      setMessage({
+        type: 'error',
+        text: err.response?.data?.message || 'Gagal lanjut ke Putaran 2.',
+      });
+    } finally {
+      setProcessingRoundAction(false);
+    }
+  };
+
+  const handleResetRound2 = async () => {
+    if (!selectedStageId) return;
+    if (
+      !window.confirm(
+        'Reset Putaran 2 kembali ke Putaran 1?\n\n' +
+          'Perhatian: Suara yang diinput pada Putaran 2 akan dihapus/direset dan sistem kembali membuka Putaran 1.'
+      )
+    ) {
+      return;
+    }
+    setProcessingRoundAction(true);
+    try {
+      const res = await electionService.resetRound2(selectedStageId);
+      setMessage({
+        type: 'success',
+        text: res.message || 'Putaran 2 berhasil direset kembali ke Putaran 1.',
+      });
+      const ov = await electionService.getOverview();
+      setStages(ov.stages);
+      setSelectedRound(1);
+      await loadStageData(selectedStageId, ov.stages, 1);
+    } catch (err: any) {
+      setMessage({
+        type: 'error',
+        text: err.response?.data?.message || 'Gagal mereset Putaran 2.',
+      });
+    } finally {
+      setProcessingRoundAction(false);
+    }
+  };
+
+  const handleFinalizeRound2 = async () => {
+    if (!selectedStageId) return;
+    if (
+      !window.confirm(
+        'Tetapkan Pemenang Definitif dan Kunci Pemilihan Tahap 2?\n\n' +
+          'Hasil Putaran 2 akan dikunci secara permanen dan calon dengan suara terbanyak (atau peraih suara penentu GM Halim) ditetapkan sebagai Ketua Definitif Sekarpura terpilih.'
+      )
+    ) {
+      return;
+    }
+    setProcessingRoundAction(true);
+    try {
+      const res = await electionService.finalizeRound2(selectedStageId);
+      setMessage({
+        type: 'success',
+        text: res.message || 'Tahap 2 berhasil diselesaikan & pemenang definitif ditetapkan!',
+      });
+      const ov = await electionService.getOverview();
+      setStages(ov.stages);
+      await loadStageData(selectedStageId, ov.stages, 2);
+    } catch (err: any) {
+      setMessage({
+        type: 'error',
+        text: err.response?.data?.message || 'Gagal menetapkan pemenang definitif.',
+      });
+    } finally {
+      setProcessingRoundAction(false);
     }
   };
 
@@ -355,6 +502,181 @@ export const AdminQuickCountPage: React.FC = () => {
             <AlertCircle className="w-4 h-4 shrink-0" />
           )}
           <span>{message.text}</span>
+        </div>
+      )}
+
+      {/* Definitive Stage Round Switcher & Schema Flow Controller */}
+      {isStage2 && (
+        <div className="bg-white dark:bg-navy-900 border-2 border-slate-200 dark:border-navy-800 rounded-3xl p-5 shadow-sm space-y-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-electric-500/10 text-electric-600 dark:text-electric-400 border border-electric-500/20">
+                  Tahap 2: Pemilihan Calon Ketua Definitif
+                </span>
+                {currentStage?.round2Completed ? (
+                  <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 border border-emerald-500/30">
+                    🏆 Pemenang Definitif Terpilih
+                  </span>
+                ) : currentStage?.activeRound === 2 ? (
+                  <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 border border-amber-500/30 animate-pulse">
+                    🗳️ Putaran 2 Aktif
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-blue-500/15 text-blue-600 border border-blue-500/30">
+                    🗳️ Putaran 1 Aktif
+                  </span>
+                )}
+              </div>
+              <h2 className="text-base sm:text-lg font-extrabold text-navy-900 dark:text-white">
+                Tata Tertib 2 Putaran / 2 Skema Pemilihan Definitif
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Putaran 1 (Skema 1: Syarat Mutlak ≥ 50% + 1) • Putaran 2 (Skema 2: Head-to-Head 2 Calon Teratas + 1 Suara GM Halim jika 50%-50%)
+              </p>
+            </div>
+
+            {/* Switch Round Tabs */}
+            <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-navy-800 rounded-2xl border border-slate-200 dark:border-navy-700 shrink-0">
+              <button
+                type="button"
+                onClick={() => handleSwitchRound(1)}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  selectedRound === 1
+                    ? 'bg-electric-600 text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-navy-900 dark:hover:text-white'
+                }`}
+              >
+                <span>Putaran 1 (Skema 1)</span>
+                {currentStage?.round1Completed && (
+                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 font-bold">
+                    ✓ Selesai
+                  </span>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSwitchRound(2)}
+                disabled={!currentStage?.round1Completed && currentStage?.activeRound !== 2}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  selectedRound === 2
+                    ? 'bg-electric-600 text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-navy-900 dark:hover:text-white disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed'
+                }`}
+              >
+                <span>Putaran 2 (Skema 2)</span>
+                {currentStage?.round2Completed ? (
+                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 font-bold">
+                    🏆 Final
+                  </span>
+                ) : (
+                  currentStage?.round1Completed && (
+                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-600 dark:text-amber-300 font-bold">
+                      Aktif
+                    </span>
+                  )
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Contextual Status / Action Callout */}
+          {selectedRound === 1 ? (
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-navy-800/80 border border-slate-200 dark:border-navy-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="text-xs space-y-1">
+                <p className="font-extrabold text-navy-900 dark:text-white">
+                  Status Putaran 1 (Skema 1: Syarat Mutlak ≥ 50% + 1)
+                </p>
+                <p className="text-slate-500 dark:text-slate-400">
+                  Target total: <strong>{targetVotes} suara</strong>. Syarat menang mutlak: minimal{' '}
+                  <strong className="text-amber-600 dark:text-amber-400">
+                    {Math.floor(targetVotes / 2) + 1} suara
+                  </strong>.
+                  {stageQuickCount?.schemaRules?.stage2Definitive?.skema1?.hasWinner50Plus1 ? (
+                    <span className="text-emerald-600 dark:text-emerald-400 font-bold ml-1">
+                      ✓ Calon telah mencapai syarat mutlak: {stageQuickCount.schemaRules.stage2Definitive.skema1.winnerName}
+                    </span>
+                  ) : (
+                    <span className="ml-1">
+                      {totalSum >= targetVotes
+                        ? 'Semua suara telah masuk dan belum ada calon yang mencapai syarat mutlak 50% + 1.'
+                        : `Saat ini telah masuk ${totalSum} dari ${targetVotes} suara.`}
+                    </span>
+                  )}
+                </p>
+              </div>
+
+              {/* Action Button: Advance to Round 2 */}
+              <div className="flex items-center gap-2 shrink-0">
+                {totalSum >= targetVotes && !stageQuickCount?.schemaRules?.stage2Definitive?.skema1?.hasWinner50Plus1 && (
+                  <button
+                    type="button"
+                    onClick={handleAdvanceRound2}
+                    disabled={processingRoundAction}
+                    className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-navy-950 font-black text-xs shadow-md shadow-amber-500/20 transition-all flex items-center gap-2 disabled:opacity-50"
+                  >
+                    <span>Lanjut ke Putaran 2 (Skema 2: Head-to-Head)</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                )}
+                {currentStage?.round1Completed && (
+                  <button
+                    type="button"
+                    onClick={() => handleSwitchRound(2)}
+                    className="px-3.5 py-2.5 rounded-xl bg-electric-600 hover:bg-electric-500 text-white font-bold text-xs shadow-sm transition-all flex items-center gap-1.5"
+                  >
+                    <span>Buka Putaran 2</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="p-4 rounded-2xl bg-gradient-to-r from-electric-500/10 via-amber-500/10 to-transparent border border-electric-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="text-xs space-y-1">
+                <p className="font-extrabold text-navy-900 dark:text-white flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-gold-500" />
+                  <span>Status Putaran 2 (Skema 2: Head-to-Head 2 Calon Teratas)</span>
+                </p>
+                <p className="text-slate-500 dark:text-slate-400">
+                  Hanya 2 calon teratas dari Putaran 1 yang bertanding. Apabila hasil akhir seri{' '}
+                  <strong className="text-electric-600 dark:text-electric-400">50% : 50%</strong>, General Manager Bandara Halim PK memberikan 1 suara penentu.
+                </p>
+                {stageQuickCount?.schemaRules?.round1Summary && (
+                  <p className="text-[11px] text-slate-400 italic">
+                    Riwayat Putaran 1: {stageQuickCount.schemaRules.round1Summary.top2Candidates?.map((c) => `${c.fullName} (${c.votes} suara)`).join(' vs ')}
+                  </p>
+                )}
+              </div>
+
+              {/* Action Buttons for Round 2 */}
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleResetRound2}
+                  disabled={processingRoundAction}
+                  className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-navy-800 dark:hover:bg-navy-700 text-slate-700 dark:text-slate-300 text-xs font-bold transition-all flex items-center gap-1 disabled:opacity-50"
+                  title="Kembali ke Putaran 1 dan hapus suara Putaran 2"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Reset ke Putaran 1</span>
+                </button>
+
+                {!currentStage?.round2Completed && (
+                  <button
+                    type="button"
+                    onClick={handleFinalizeRound2}
+                    disabled={processingRoundAction || totalSum < targetVotes}
+                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-md shadow-emerald-600/20 transition-all flex items-center gap-1.5 disabled:opacity-40"
+                  >
+                    <Trophy className="w-3.5 h-3.5" />
+                    <span>Tetapkan Pemenang Definitif</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

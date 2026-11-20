@@ -53,4 +53,44 @@ export const electionService = {
     );
     return res.data;
   },
+
+  async advanceRound2(stageId: string) {
+    const res = await api.post<{
+      success: boolean;
+      message: string;
+      stage: ElectionStage;
+      quickCount: any;
+    }>(`/elections/stages/${stageId}/advance-round-2`);
+    return res.data;
+  },
+
+  async switchRound(stageId: string, round: number) {
+    const res = await api.post<{
+      success: boolean;
+      message: string;
+      stage: ElectionStage;
+      quickCount: any;
+    }>(`/elections/stages/${stageId}/switch-round`, { round });
+    return res.data;
+  },
+
+  async resetRound2(stageId: string) {
+    const res = await api.post<{
+      success: boolean;
+      message: string;
+      stage: ElectionStage;
+      quickCount: any;
+    }>(`/elections/stages/${stageId}/reset-round-2`);
+    return res.data;
+  },
+
+  async finalizeRound2(stageId: string) {
+    const res = await api.post<{
+      success: boolean;
+      message: string;
+      stage: ElectionStage;
+      quickCount: any;
+    }>(`/elections/stages/${stageId}/finalize-round-2`);
+    return res.data;
+  },
 };
