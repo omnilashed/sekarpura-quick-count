@@ -500,11 +500,22 @@ export const AdminQuickCountPage: React.FC = () => {
         text: res.message || `Data suara resmi TPS ${source.sourceCode} berhasil direset ke 0.`,
       });
       setIsCorrectionMode(false);
-      await loadStageData(selectedStageId, stages, selectedRound);
+      try {
+        await loadStageData(selectedStageId, stages, selectedRound);
+      } catch (loadErr) {
+        console.error('Error reloading stage data after reset:', loadErr);
+      }
     } catch (err: any) {
+      const errMsg =
+        err.response?.data?.message ||
+        (typeof err.response?.data === 'string' && err.response.data.length < 200
+          ? err.response.data
+          : null) ||
+        err.message ||
+        'Gagal mereset data suara TPS.';
       setMessage({
         type: 'error',
-        text: err.response?.data?.message || 'Gagal mereset data suara TPS.',
+        text: errMsg,
       });
     } finally {
       setResettingSourceId(null);
@@ -535,11 +546,22 @@ export const AdminQuickCountPage: React.FC = () => {
         text: res.message || 'Seluruh data suara resmi tahap ini berhasil direset kembali ke 0.',
       });
       setIsCorrectionMode(false);
-      await loadStageData(selectedStageId, stages, selectedRound);
+      try {
+        await loadStageData(selectedStageId, stages, selectedRound);
+      } catch (loadErr) {
+        console.error('Error reloading stage data after reset all:', loadErr);
+      }
     } catch (err: any) {
+      const errMsg =
+        err.response?.data?.message ||
+        (typeof err.response?.data === 'string' && err.response.data.length < 200
+          ? err.response.data
+          : null) ||
+        err.message ||
+        'Gagal mereset seluruh data suara tahap ini.';
       setMessage({
         type: 'error',
-        text: err.response?.data?.message || 'Gagal mereset seluruh data suara tahap ini.',
+        text: errMsg,
       });
     } finally {
       setResettingAll(false);
