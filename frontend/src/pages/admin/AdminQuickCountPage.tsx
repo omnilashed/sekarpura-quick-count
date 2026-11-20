@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   History,
   Download,
@@ -34,6 +34,8 @@ export const AdminQuickCountPage: React.FC = () => {
   const [correctionReason, setCorrectionReason] = useState<string>('');
   const [isCorrectionMode, setIsCorrectionMode] = useState<boolean>(false);
   const [submitting, setSubmitting] = useState<boolean>(false);
+  const [highlightForm, setHighlightForm] = useState<boolean>(false);
+  const formSectionRef = useRef<HTMLDivElement>(null);
 
   // History modal
   const [historySource, setHistorySource] = useState<VoteSource | null>(null);
@@ -153,34 +155,71 @@ export const AdminQuickCountPage: React.FC = () => {
     }
   };
 
-  // When source selection changes
-  const handleSourceSelect = (sourceId: string) => {
+  // When source selection changes or user clicks "Koreksi"
+  const handleSourceSelect = (sourceId: string, isExplicitCorrection = false) => {
     setSelectedSourceId(sourceId);
-    setMessage(null);
     const source = sources.find((s) => s._id === sourceId);
+    const isVerified = source?.status === 'VERIFIED';
+    const activatingCorrection = isExplicitCorrection || isVerified;
 
-    if (source && source.status === 'VERIFIED' && source.activeSubmissionId) {
-      setIsCorrectionMode(true);
-      const sub = source.activeSubmissionId;
-      const map: Record<string, number> = {};
-      sub.votes?.forEach((v: any) => {
-        map[v.candidateId] = v.count;
+    setIsCorrectionMode(activatingCorrection);
+
+    const sub =
+      source?.activeSubmissionId && typeof source.activeSubmissionId === 'object'
+        ? (source.activeSubmissionId as any)
+        : null;
+
+    const map: Record<string, number> = {};
+
+    if (sub && Array.isArray(sub.votes) && sub.votes.length > 0) {
+      sub.votes.forEach((v: any) => {
+        const cid =
+          typeof v.candidateId === 'object' && v.candidateId !== null
+            ? (v.candidateId._id || v.candidateId).toString()
+            : String(v.candidateId);
+        map[cid] = Number(v.count) || 0;
       });
-      setVoteInputs(map);
-      setInvalidVotes(sub.invalidVotes || 0);
+      setInvalidVotes(Number(sub.invalidVotes) || 0);
       setNotes(sub.notes || '');
-      setCorrectionReason('');
     } else {
-      setIsCorrectionMode(false);
-      const initialMap: Record<string, number> = {};
+      // Fallback to quickcount rankings for this round
       candidates.forEach((c) => {
         const existingRank = stageQuickCount?.rankings?.find((r) => r.candidateId === c._id);
-        initialMap[c._id] = existingRank ? existingRank.votes : 0;
+        map[c._id] = existingRank ? existingRank.votes : 0;
       });
-      setVoteInputs(initialMap);
       setInvalidVotes(stageQuickCount?.invalidVotes || 0);
       setNotes('');
-      setCorrectionReason('');
+    }
+
+    // Ensure all stage candidates are present in the map
+    candidates.forEach((c) => {
+      if (map[c._id] === undefined) {
+        map[c._id] = 0;
+      }
+    });
+
+    setVoteInputs(map);
+    setCorrectionReason('');
+
+    // Trigger visual highlight feedback
+    setHighlightForm(true);
+    setTimeout(() => setHighlightForm(false), 2500);
+
+    if (activatingCorrection) {
+      setMessage({
+        type: 'success',
+        text: `✏️ Mode Koreksi Aktif: TPS "${source?.sourceCode || ''} - ${source?.sourceName || ''}" siap diedit. Silakan ubah angka di formulir sebelah kiri, lengkapi alasan revisi di bawah, lalu simpan.`,
+      });
+    } else {
+      setMessage({
+        type: 'success',
+        text: `TPS "${source?.sourceCode || ''}" dipilih. Formulir siap untuk input perolehan suara.`,
+      });
+    }
+
+    // Smooth scroll to form section
+    if (formSectionRef.current) {
+      formSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   };
 
@@ -715,22 +754,60 @@ export const AdminQuickCountPage: React.FC = () => {
       {/* Main Grid: Data Entry Form on Left + Sources Status Table on Right */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8">
         {/* Form Input Suara (7 Cols) */}
-        <div className="lg:col-span-7 bg-white dark:bg-navy-900 border border-slate-200 dark:border-navy-800 rounded-3xl p-4 xs:p-5 sm:p-8 shadow-sm space-y-4 sm:space-y-6">
+        <div
+          ref={formSectionRef}
+          className={`lg:col-span-7 bg-white dark:bg-navy-900 border rounded-3xl p-4 xs:p-5 sm:p-8 shadow-sm space-y-4 sm:space-y-6 transition-all duration-500 ${
+            highlightForm
+              ? 'ring-4 ring-amber-500 border-amber-500 shadow-2xl scale-[1.01]'
+              : isCorrectionMode
+              ? 'border-amber-500/70 ring-2 ring-amber-500/20'
+              : 'border-slate-200 dark:border-navy-800'
+          }`}
+        >
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-navy-800 pb-4 gap-2">
             <div>
               <h2 className="text-base sm:text-lg font-extrabold text-navy-900 dark:text-white">
                 {isCorrectionMode ? 'Panel Hitung & Koreksi Suara TPS' : 'Panel Input & Hitung Suara TPS'}
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Pilih TPS, lalu klik <span className="font-bold text-emerald-600">+1 Live</span> saat surat suara dibacakan
+                {isCorrectionMode
+                  ? 'Sedang dalam mode koreksi. Sesuaikan perolehan suara calon lalu simpan revisi resmi.'
+                  : 'Pilih TPS, lalu klik +1 Live saat surat suara dibacakan.'}
               </p>
             </div>
-            {isCorrectionMode && (
-              <span className="px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-black text-[10px] uppercase tracking-wider shrink-0">
-                Mode Siap Hitung
+            {isCorrectionMode ? (
+              <span className="px-3 py-1 rounded-full bg-amber-500 text-navy-950 font-black text-[10px] uppercase tracking-wider shrink-0 flex items-center gap-1 shadow-sm animate-pulse">
+                <span>✏️ Mode Koreksi Aktif</span>
+              </span>
+            ) : (
+              <span className="px-2.5 py-1 rounded-full bg-slate-100 dark:bg-navy-800 text-slate-600 dark:text-slate-400 font-bold text-[10px] uppercase tracking-wider shrink-0">
+                Mode Input Siap
               </span>
             )}
           </div>
+
+          {/* Banner Active Correction */}
+          {isCorrectionMode && (
+            <div className="p-3.5 sm:p-4 rounded-2xl bg-amber-500/15 border-2 border-amber-500/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2 text-amber-950 dark:text-amber-200">
+                <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>
+                  <strong>Mode Koreksi TPS Aktif</strong>: Anda sedang mengoreksi formulir{' '}
+                  <strong>{selectedSource?.sourceCode}</strong> ({selectedSource?.sourceName}).
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCorrectionMode(false);
+                  setMessage(null);
+                }}
+                className="px-2.5 py-1 rounded-lg bg-white dark:bg-navy-800 text-slate-700 dark:text-slate-200 font-bold text-[11px] hover:bg-slate-100 shrink-0 border border-slate-200 dark:border-navy-700 self-end sm:self-auto"
+              >
+                Batal Koreksi
+              </button>
+            </div>
+          )}
 
           {/* Live Tally Quick Helper */}
           <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-electric-500/10 to-transparent border border-emerald-500/30 flex items-start gap-3">
@@ -1112,8 +1189,12 @@ export const AdminQuickCountPage: React.FC = () => {
               {sources.map((src) => (
                 <div
                   key={src._id}
-                  className={`p-3 rounded-2xl border text-xs flex items-center justify-between gap-2 transition-colors ${
-                    src.status === 'VERIFIED'
+                  className={`p-3 rounded-2xl border text-xs flex items-center justify-between gap-2 transition-all ${
+                    selectedSourceId === src._id
+                      ? isCorrectionMode
+                        ? 'bg-amber-500/10 border-amber-500 ring-2 ring-amber-500/40 shadow-sm'
+                        : 'bg-electric-500/10 border-electric-500 ring-2 ring-electric-500/40 shadow-sm'
+                      : src.status === 'VERIFIED'
                       ? 'bg-emerald-500/5 border-emerald-500/20'
                       : 'bg-slate-50 dark:bg-navy-800/40 border-slate-200 dark:border-navy-700/60'
                   }`}
@@ -1126,6 +1207,11 @@ export const AdminQuickCountPage: React.FC = () => {
                       {src.status === 'VERIFIED' && (
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                       )}
+                      {selectedSourceId === src._id && isCorrectionMode && (
+                        <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-500 text-navy-950">
+                          Sedang Dikoreksi
+                        </span>
+                      )}
                     </div>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
                       {src.sourceName}
@@ -1134,13 +1220,25 @@ export const AdminQuickCountPage: React.FC = () => {
 
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button
-                      onClick={() => handleSourceSelect(src._id)}
-                      className="px-2.5 py-1.5 rounded-lg bg-electric-500/10 hover:bg-electric-500/20 text-electric-600 dark:text-electric-400 font-bold text-[11px] min-h-[34px]"
+                      type="button"
+                      onClick={() => handleSourceSelect(src._id, src.status === 'VERIFIED')}
+                      className={`px-3 py-1.5 rounded-xl font-bold text-[11px] min-h-[34px] transition-all flex items-center gap-1.5 ${
+                        selectedSourceId === src._id && isCorrectionMode
+                          ? 'bg-amber-500 hover:bg-amber-400 text-navy-950 font-black shadow-md ring-2 ring-amber-400'
+                          : 'bg-electric-500/10 hover:bg-electric-500/20 text-electric-600 dark:text-electric-400'
+                      }`}
                     >
-                      {src.status === 'VERIFIED' ? 'Koreksi' : 'Input'}
+                      <span>
+                        {selectedSourceId === src._id && isCorrectionMode
+                          ? '✏️ Sedang Dikoreksi'
+                          : src.status === 'VERIFIED'
+                          ? '✏️ Koreksi'
+                          : '➕ Input'}
+                      </span>
                     </button>
                     {src.status === 'VERIFIED' && (
                       <button
+                        type="button"
                         onClick={() => handleOpenHistory(src)}
                         className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 min-h-[34px] min-w-[34px] flex items-center justify-center"
                         title="Riwayat Revisi"
