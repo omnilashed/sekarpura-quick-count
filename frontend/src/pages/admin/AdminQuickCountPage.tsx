@@ -36,6 +36,7 @@ export const AdminQuickCountPage: React.FC = () => {
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [highlightForm, setHighlightForm] = useState<boolean>(false);
   const formSectionRef = useRef<HTMLDivElement>(null);
+  const correctionReasonRef = useRef<HTMLTextAreaElement>(null);
 
   // History modal
   const [historySource, setHistorySource] = useState<VoteSource | null>(null);
@@ -232,6 +233,13 @@ export const AdminQuickCountPage: React.FC = () => {
     Boolean(selectedRound === 1 ? stageQuickCount?.isRound1Saved : stageQuickCount?.isRound2Saved) ||
     Boolean((selectedSource?.activeSubmissionId as any)?.isFinalSaved);
 
+  const isAlreadySubmitted =
+    Boolean(selectedSource?.status === 'VERIFIED') ||
+    Boolean(selectedSource?.activeSubmissionId) ||
+    isSourceFinalSaved;
+
+  const isRevisionRequired = isAlreadySubmitted || isCorrectionMode;
+
   // Quick live tally (+1 / -1 per surat suara tanpa syarat simpan atau alasan revisi)
   const handleQuickTally = async (candidateId: string | null, delta: number, isInvalid = false) => {
     if (!selectedSourceId || !selectedStageId) {
@@ -285,12 +293,16 @@ export const AdminQuickCountPage: React.FC = () => {
       return;
     }
 
-    // Jika TPS sudah pernah disimpan resmi, revisi/save ulang WAJIB mengisi alasan koreksi
-    if (isSourceFinalSaved && (!correctionReason || correctionReason.trim().length < 5)) {
+    // Jika TPS sudah pernah disimpan atau dalam mode koreksi, revisi/save ulang WAJIB mengisi alasan koreksi
+    if (isRevisionRequired && (!correctionReason || correctionReason.trim().length < 5)) {
       setMessage({
         type: 'error',
-        text: `Data suara Putaran ${selectedRound} untuk TPS ini sudah pernah disimpan secara resmi. Cantumkan Alasan Revisi / Koreksi Suara (minimal 5 karakter) untuk menyimpan ulang (save ulang).`,
+        text: `Data suara Putaran ${selectedRound} untuk sumber ini sudah pernah dimasukkan. Silakan lengkapi kolom Alasan Revisi / Koreksi Suara (minimal 5 karakter) di bawah.`,
       });
+      setIsCorrectionMode(true);
+      setTimeout(() => {
+        correctionReasonRef.current?.focus();
+      }, 100);
       return;
     }
 
@@ -313,12 +325,12 @@ export const AdminQuickCountPage: React.FC = () => {
         totalVotes: totalSum,
         notes: notes.trim() || undefined,
         round: selectedRound,
-        correctionReason: isSourceFinalSaved ? correctionReason.trim() : undefined,
+        correctionReason: isRevisionRequired ? (correctionReason.trim() || undefined) : undefined,
       });
 
       setMessage({
         type: 'success',
-        text: isSourceFinalSaved
+        text: isRevisionRequired
           ? `Koreksi/revisi suara Putaran ${selectedRound} (${res.submission?.totalVotes || totalSum} suara) berhasil disimpan dan diaudit!`
           : `Hasil Rekapitulasi TPS Putaran ${selectedRound} (${res.submission?.totalVotes || totalSum} suara) berhasil disimpan secara resmi ke database!`,
       });
@@ -326,10 +338,18 @@ export const AdminQuickCountPage: React.FC = () => {
 
       await loadStageData(selectedStageId, stages, selectedRound);
     } catch (err: any) {
+      const errorMsg =
+        err.response?.data?.message || 'Gagal menyimpan data suara resmi.';
       setMessage({
         type: 'error',
-        text: err.response?.data?.message || 'Gagal menyimpan data suara resmi.',
+        text: errorMsg,
       });
+      if (err.response?.status === 409 || err.response?.data?.needsCorrectionReason) {
+        setIsCorrectionMode(true);
+        setTimeout(() => {
+          correctionReasonRef.current?.focus();
+        }, 150);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -986,29 +1006,32 @@ export const AdminQuickCountPage: React.FC = () => {
               />
             </div>
 
-            {/* Revision Callout & Mandatory Reason (Only when already officially saved) */}
-            {isSourceFinalSaved && (
-              <div className="space-y-3 p-4 rounded-2xl bg-amber-500/10 border-2 border-amber-500/30 text-amber-950 dark:text-amber-200">
+            {/* Revision Callout & Mandatory Reason (When in correction mode or already submitted) */}
+            {isRevisionRequired && (
+              <div className="space-y-3 p-4 rounded-2xl bg-amber-500/10 border-2 border-amber-500/40 text-amber-950 dark:text-amber-200">
                 <div className="flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
                   <p className="font-bold text-xs sm:text-sm">
-                    Status TPS: Rekapitulasi Putaran {selectedRound} Sudah Pernah Disimpan Resmi
+                    {isAlreadySubmitted
+                      ? `Status TPS: Data Suara Putaran ${selectedRound} Sudah Pernah Disimpan Resmi`
+                      : `Mode Koreksi Suara TPS Aktif`}
                   </p>
                 </div>
                 <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
-                  Menyimpan perubahan ulang (save ulang) akan dicatat sebagai <strong>Revisi Resmi</strong> baru dalam audit trail. Wajib mengisi alasan koreksi/revisi di bawah ini:
+                  Menyimpan perubahan (koreksi / save ulang) akan dicatat sebagai <strong>Revisi Resmi</strong> baru dalam audit trail. Wajib mengisi kolom alasan koreksi/revisi di bawah ini:
                 </p>
                 <div>
                   <label className="block text-[11px] font-extrabold uppercase tracking-wider mb-1 text-amber-800 dark:text-amber-300">
                     Alasan Revisi / Koreksi Suara (Wajib Diisi) *
                   </label>
                   <textarea
+                    ref={correctionReasonRef}
                     rows={2}
                     required
                     value={correctionReason}
                     onChange={(e) => setCorrectionReason(e.target.value)}
                     placeholder="Contoh: Koreksi hitung surat suara calon nomor 3 setelah verifikasi ulang bersama saksi forum..."
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-white dark:bg-navy-900 border border-amber-500/40 text-xs text-navy-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-white dark:bg-navy-900 border-2 border-amber-500 text-xs text-navy-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-sm"
                   />
                 </div>
               </div>
@@ -1018,14 +1041,14 @@ export const AdminQuickCountPage: React.FC = () => {
               type="submit"
               disabled={submitting || !selectedSourceId}
               className={`w-full py-3 sm:py-3.5 rounded-2xl font-bold text-xs sm:text-sm text-white shadow-lg transition-all disabled:opacity-50 min-h-[44px] flex items-center justify-center gap-2 ${
-                isSourceFinalSaved
+                isRevisionRequired
                   ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-600/20'
                   : 'bg-electric-600 hover:bg-electric-500 shadow-electric-600/20'
               }`}
             >
               {submitting ? (
                 'Menyimpan Data...'
-              ) : isSourceFinalSaved ? (
+              ) : isRevisionRequired ? (
                 <>
                   <Sparkles className="w-4 h-4" />
                   <span>📝 Simpan Koreksi / Revisi Resmi Suara Putaran {selectedRound}</span>

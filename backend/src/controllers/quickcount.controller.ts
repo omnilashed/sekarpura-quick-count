@@ -214,15 +214,20 @@ export class QuickCountController {
     let submission: any;
     let isRevision = false;
 
-    if (existingSubmission && existingSubmission.isFinalSaved) {
-      // Data TPS Putaran ini SUDAH PERNAH DISAVE RESMI sebelumnya.
-      // Sesuai aturan tata tertib: jika ada "save ulang", maka wajib mencantumkan alasan revisi!
+    const isAlreadySaved =
+      Boolean(existingSubmission?.isFinalSaved) ||
+      (existingSubmission && existingSubmission.verificationStatus === 'VERIFIED') ||
+      source.status === 'VERIFIED';
+
+    if (existingSubmission && isAlreadySaved) {
+      // Data TPS Putaran ini SUDAH PERNAH DISAVE RESMI / DIVERIFIKASI sebelumnya.
+      // Sesuai aturan tata tertib: jika ada "save ulang / koreksi", maka wajib mencantumkan alasan revisi!
       const reason = validated.correctionReason?.trim();
       if (!reason || reason.length === 0) {
         res.status(409).json({
           success: false,
           needsCorrectionReason: true,
-          message: `Data suara Putaran ${targetRound} untuk TPS ini sudah pernah dimasukkan / disimpan secara resmi. Untuk menyimpan perubahan/save ulang, silakan cantumkan Alasan Revisi / Koreksi Suara.`,
+          message: `Data suara Putaran ${targetRound} untuk sumber ini sudah pernah dimasukkan / disimpan secara resmi. Gunakan fitur Koreksi Suara dengan mencantumkan alasan revisi.`,
         });
         return;
       }
