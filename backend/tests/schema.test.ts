@@ -182,4 +182,53 @@ describe('SEKARPURA Election Center - 2-Stage Election Schema & GM Halim Tie-Bre
     expect(qc.totalVotesIn).toBe(24);
     expect(qc.schemaRules.stage2.gmTieBreakerCast).toBe(false);
   });
+
+  it('5. Admin can officially reset vote data for a specific TPS in production', async () => {
+    // Find the vote source used in test
+    const source = await VoteSource.findOne({ stageId: testStage2Id });
+    expect(source).toBeDefined();
+
+    const res = await request(app)
+      .post(`/api/quickcount/sources/${source!._id}/reset`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ resetAllRounds: true });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.message).toContain('berhasil direset kembali ke 0');
+
+    // Verify database state: submission deleted, source status NOT_SUBMITTED
+    const updatedSource = await VoteSource.findById(source!._id);
+    expect(updatedSource?.status).toBe('NOT_SUBMITTED');
+    expect(updatedSource?.activeSubmissionId).toBeNull();
+
+    const remainingSubmissions = await VoteSubmission.countDocuments({ sourceId: source!._id });
+    expect(remainingSubmissions).toBe(0);
+
+    // Verify quickcount is now 0
+    const qc = await QuickCountService.calculateStageQuickCount(testStage2Id, true);
+    expect(qc.totalVotesIn).toBe(0);
+  });
+
+  it('6. Admin can officially reset all stage votes with clean rollback', async () => {
+    const res = await request(app)
+      .post(`/api/quickcount/stages/${testStage2Id}/reset-votes`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ resetAllRounds: true });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.message).toContain('berhasil direset kembali ke 0');
+
+    // Verify stage state is rolled back cleanly
+    const stage = await ElectionStage.findById(testStage2Id);
+    expect(stage?.round1Completed).toBe(false);
+    expect(stage?.round2Completed).toBe(false);
+    expect(stage?.activeRound).toBe(1);
+    expect(stage?.isTieBreakerActive).toBe(false);
+    expect(stage?.round2CandidateIds?.length).toBe(0);
+
+    const submissionsCount = await VoteSubmission.countDocuments({ stageId: testStage2Id });
+    expect(submissionsCount).toBe(0);
+  });
 });

@@ -119,22 +119,22 @@ export const quickcountService = {
     return res.data.data;
   },
 
-  async resetSourceVotes(sourceId: string, round?: number) {
+  async resetSourceVotes(sourceId: string, round?: number, resetAllRounds?: boolean) {
     const res = await api.post<{
       success: boolean;
       message: string;
       source: VoteSource;
       quickcount: QuickCountData;
-    }>(`/quickcount/sources/${sourceId}/reset`, { round });
+    }>(`/quickcount/sources/${sourceId}/reset`, { round, resetAllRounds });
     return res.data;
   },
 
-  async resetStageVotes(stageId: string, round?: number) {
+  async resetStageVotes(stageId: string, round?: number, resetAllRounds?: boolean) {
     const res = await api.post<{
       success: boolean;
       message: string;
       quickcount: QuickCountData;
-    }>(`/quickcount/stages/${stageId}/reset-votes`, { round });
+    }>(`/quickcount/stages/${stageId}/reset-votes`, { round, resetAllRounds });
     return res.data;
   },
 
